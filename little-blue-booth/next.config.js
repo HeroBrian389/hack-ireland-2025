@@ -5,6 +5,17 @@
 import "./src/env.js";
 
 /** @type {import("next").NextConfig} */
-const config = {};
+const config = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "health-kiosk.s3.eu-west-1.amazonaws.com",
+        port: "",
+        pathname: "/**",
+      },
+    ],
+  },
+};
 
 export default config;
