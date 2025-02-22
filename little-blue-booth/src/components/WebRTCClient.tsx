@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef } from 'react';
-import { useWebRTC } from '@/lib/hooks/useWebRTC';
-import { useConversation } from '@/lib/context/ConversationContext';
+import { useWebRTC } from '~/lib/hooks/useWebRTC';
+import { useConversation } from '~/lib/context/ConversationContext';
 
 const blankAnalysis = `[Background Analysis] No new hypotheses can be generated from the conversation so far.`;
 
@@ -55,7 +55,7 @@ export const WebRTCClient = () => {
           }),
         });
 
-        const data = await response.json();
+        const data = await response.json() as { success: boolean, analysis: string };
 
 
         // Update the last analyzed message reference
@@ -87,7 +87,7 @@ export const WebRTCClient = () => {
     };
 
     if (messages.length > 0) {
-      performContinuousAnalysis();
+      void performContinuousAnalysis();
     }
   }, [messages, sendMessage]);
 
@@ -132,7 +132,7 @@ export const WebRTCClient = () => {
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json() as { success: boolean, analysis: string };
 
       if (data.success) {
         // Send the analysis back to the conversation
