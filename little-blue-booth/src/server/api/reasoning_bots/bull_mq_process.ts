@@ -4,6 +4,8 @@ import { Queue, Worker, Job } from "bullmq";
 import { query_chat_bot } from "./analyse_data";
 import { db } from "~/server/db";
 import OpenAI from "openai";
+import { runGoogleFitAnalysis } from "./google_fit_analysis";
+import { getFitData } from "~/services/googleFitService";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -35,6 +37,9 @@ export const worker = new Worker<JobData>(
       case "extractHealthMetrics":
         return runHealthMetricsExtraction(job);
 
+      case "extractGoogleFitData":
+        return runGoogleFitAnalysis(job);
+
       default:
         console.log(`Unknown job name ${job.name}`);
         break;
@@ -43,8 +48,32 @@ export const worker = new Worker<JobData>(
   {
     connection,
     concurrency: 50,
-  }
+  },
 );
+
+async function runGoogleFitAnalysis(job: Job<JobData>) {
+  if (!job.data.sessionId) {
+    throw new Error("sessionId is required for Google Fit analysis");
+  }
+
+  // Get the session from the database to get userId
+  const session = await db.session.findUnique({
+    where: { id: job.data.sessionId },
+    select: { userId: true },
+  });
+
+  if (!session) {
+    throw new Error("Session not found");
+  }
+
+  const googleFitData = await getFitData(session.userId);
+
+  if (!googleFitData) {
+    throw new Error("No Google Fit data found");
+  }
+
+  return googleFitData;
+}
 
 // Another specialized function
 async function runRoughOverview(job: Job<JobData>) {
@@ -68,16 +97,23 @@ async function runHealthMetricsExtraction(job: Job<JobData>) {
       where: {
         sessionId: job.data.sessionId,
         markerType: {
-          in: ["bmi", "height", "weight", "heartRate", "bloodPressure", "bloodOxygen"]
-        }
-      }
+          in: [
+            "bmi",
+            "height",
+            "weight",
+            "heartRate",
+            "bloodPressure",
+            "bloodOxygen",
+          ],
+        },
+      },
     });
 
     // If we already have all metrics, skip processing
     if (existingMarkers.length >= 6) {
       return {
         skipped: true,
-        message: "Health metrics already exist for this session"
+        message: "Health metrics already exist for this session",
       };
     }
 
@@ -99,9 +135,13 @@ async function runHealthMetricsExtraction(job: Job<JobData>) {
       model: "gpt-4o",
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: "You are a precise medical data extraction system. Only extract values that are explicitly stated in the conversation. Do not infer or calculate values unless explicitly mentioned. Respond with a JSON object containing the following fields: bmi (number|null), height (number|null), weight (number|null), heartRate (number|null), bloodPressure ({systolic: number|null, diastolic: number|null}|null), bloodOxygen (number|null)" },
-        { role: "user", content: prompt }
-      ]
+        {
+          role: "system",
+          content:
+            "You are a precise medical data extraction system. Only extract values that are explicitly stated in the conversation. Do not infer or calculate values unless explicitly mentioned. Respond with a JSON object containing the following fields: bmi (number|null), height (number|null), weight (number|null), heartRate (number|null), bloodPressure ({systolic: number|null, diastolic: number|null}|null), bloodOxygen (number|null)",
+        },
+        { role: "user", content: prompt },
+      ],
     });
 
     if (!completion.choices[0]?.message?.content) {
@@ -113,19 +153,29 @@ async function runHealthMetricsExtraction(job: Job<JobData>) {
       height: number | null;
       weight: number | null;
       heartRate: number | null;
-      bloodPressure: { systolic: number | null; diastolic: number | null } | null;
+      bloodPressure: {
+        systolic: number | null;
+        diastolic: number | null;
+      } | null;
       bloodOxygen: number | null;
     };
 
     // Store each metric in the database if not null and not already stored
-    const existingTypes = new Set(existingMarkers.map(m => m.markerType));
+    const existingTypes = new Set(existingMarkers.map((m) => m.markerType));
     const results = [];
 
     for (const [type, value] of Object.entries(metrics)) {
       if (value === null || existingTypes.has(type)) continue;
 
-      if (type === "bloodPressure" && typeof value === "object" && value !== null) {
-        const bpValue = value as { systolic: number | null; diastolic: number | null };
+      if (
+        type === "bloodPressure" &&
+        typeof value === "object" &&
+        value !== null
+      ) {
+        const bpValue = value as {
+          systolic: number | null;
+          diastolic: number | null;
+        };
         if (bpValue.systolic !== null && bpValue.diastolic !== null) {
           const marker = await db.healthMarker.create({
             data: {
@@ -133,9 +183,9 @@ async function runHealthMetricsExtraction(job: Job<JobData>) {
               markerType: "bloodPressure",
               data: JSON.stringify({
                 systolic: bpValue.systolic,
-                diastolic: bpValue.diastolic
-              })
-            }
+                diastolic: bpValue.diastolic,
+              }),
+            },
           });
           results.push(marker);
         }
@@ -144,8 +194,8 @@ async function runHealthMetricsExtraction(job: Job<JobData>) {
           data: {
             sessionId: job.data.sessionId,
             markerType: type,
-            data: JSON.stringify({ value })
-          }
+            data: JSON.stringify({ value }),
+          },
         });
         results.push(marker);
       }
@@ -153,12 +203,10 @@ async function runHealthMetricsExtraction(job: Job<JobData>) {
 
     return {
       processed: true,
-      metrics: results
+      metrics: results,
     };
   } catch (error) {
     console.error("Error in health metrics extraction:", error);
     throw error;
   }
 }
-
-
