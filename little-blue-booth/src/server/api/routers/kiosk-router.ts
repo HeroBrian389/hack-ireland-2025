@@ -13,17 +13,16 @@ export const kioskRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { kioskId, userId } = input;
 
-      const kiosk = await ctx.db.kiosk.findUnique({
+      // First, try to find the kiosk or create it if it doesn't exist
+      const kiosk = await ctx.db.kiosk.upsert({
         where: { id: kioskId },
+        create: {
+          id: kioskId,
+          status: "ACTIVE",
+        },
+        update: {}, // Don't update anything if it exists
         select: { status: true },
       });
-
-      if (!kiosk) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Kiosk not found",
-        });
-      }
 
       if (kiosk.status !== "ACTIVE") {
         throw new TRPCError({
