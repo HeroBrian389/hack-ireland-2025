@@ -27,10 +27,34 @@ export const adminRouter = createTRPCRouter({
     return ctx.db.conversation.findMany({
       orderBy: { createdAt: "desc" },
       include: {
-        // You can expand to show related chat messages, session, etc.
         chatMessages: true,
-        session: true,
-      },
+        session: {
+          include: {
+            healthMarkers: {
+              include: {
+                device: true
+              }
+            },
+            recommendations: true,
+            referrals: true,
+            externalQueries: {
+              include: {
+                externalResults: true
+              }
+            },
+            medias: {
+              include: {
+                visionAnalyses: true
+              }
+            },
+            metaReasonings: true,
+            realtimeSessions: true,
+            auditLogs: true,
+            continualFeeds: true,
+            kiosk: true
+          }
+        }
+      }
     });
   }),
 
