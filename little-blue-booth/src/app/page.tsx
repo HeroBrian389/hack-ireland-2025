@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mic, MicOff, Pause, Play, X } from "lucide-react";
 import { useConversation } from "~/lib/context/ConversationContext";
@@ -8,8 +8,108 @@ import { useWebRTC } from "~/lib/hooks/useWebRTC";
 import { useKioskSession } from "~/lib/hooks/useKioskSession";
 import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-
 const blankAnalysis = `[Background Analysis] No new hypotheses can be generated from the conversation so far.`;
+
+
+function VideoRecorder() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [permission, setPermission] = useState(false);
+  const [screenshot, setScreenshot] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+
+  // Request camera access on mount
+  useEffect(() => {
+    const getPermissionOnMount = async () => {
+      try {
+        const streamData = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: true,
+        });
+        setPermission(true);
+        if (videoRef.current) {
+          videoRef.current.srcObject = streamData;
+        }
+      } catch (err) {
+        console.error("Error accessing camera:", err);
+        alert("Camera access denied or not available.");
+      }
+    };
+
+    getPermissionOnMount();
+  }, []);
+
+  // Function to capture a screenshot
+  const handleTakeScreenshot = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Create canvas
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Draw video frame onto canvas
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Convert canvas to image data URL
+    const dataURL = canvas.toDataURL("image/png");
+    setScreenshot(dataURL);
+
+    console.log("Captured screenshot:", dataURL);
+
+    // Convert data URL to Blob
+    const blob = await (await fetch(dataURL)).blob();
+    const formData = new FormData();
+    formData.append("file", blob, "screenshot.png");
+
+    // Upload to server
+    try {
+      const response = await fetch("/api/video_analysis", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error("Upload failed");
+
+      const data = await response.json();
+      console.log("Server response:", data);
+    } catch (error) {
+      console.error("Error uploading screenshot:", error);
+    }
+  };
+
+  // Automatically take a screenshot every 5 seconds
+  useEffect(() => {
+    if (!permission) return;
+
+    setIsRecording(true);
+
+    const interval = setInterval(() => {
+      handleTakeScreenshot();
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      setIsRecording(false);
+    };
+  }, [permission]);
+
+  return (
+    <div className="p-4">
+      <video ref={videoRef} autoPlay playsInline width="400" />
+
+
+      {screenshot && (
+        <>
+          <h2 className="mt-4 text-white">Screenshot Preview:</h2>
+          <img src={screenshot} alt="Screenshot" width="400" />
+        </>
+      )}
+    </div>
+  );
+}
 
 // Confirmation Dialog Component
 interface ConfirmDialogProps {
@@ -672,6 +772,7 @@ export default function HomePage() {
                   icon={X}
                   onClick={() => setIsConfirmDialogOpen(true)}
                 />
+                <VideoRecorder />
               </motion.div>
             )}
           </motion.div>
