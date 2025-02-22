@@ -7,9 +7,9 @@ import { v4 as uuidv4 } from "uuid";
  * The shape of a single background analysis module.
  */
 interface AnalysisModule {
-  name: string; // e.g. "diagnosticBot"
-  description?: string; // optional, for clarity
-  // Possibly include more config for concurrency, etc.
+  name: string;
+  description?: string;
+  priority?: number;
 }
 
 /**
@@ -17,26 +17,48 @@ interface AnalysisModule {
  * In a real setup, you can separate them into their own files.
  */
 const analysisModules: AnalysisModule[] = [
-  { name: "roughOverview" },
-  { name: "extractDetails" }
+  { name: "roughOverview", priority: 1 },
+  { name: "extractHealthMetrics", priority: 2 },
+  { name: "checkInformationCompleteness", priority: 3 }
 ];
 
 export async function createJobsFromConversation(
-  conversationText: string
+  conversationText: string,
+  sessionId: string
 ): Promise<string[]> {
   const jobIds: string[] = [];
 
-  for (const analysisModule of analysisModules) {
-    // Each module name can be used as the job's name or type
-    const job = await myQueue.add(analysisModule.name, {
-      // The data that the bot needs; you might shape this differently
-      conversation: conversationText,
-    });
+  try {
+    for (const analysisModule of analysisModules) {
+      const job = await myQueue.add(
+        analysisModule.name,
+        {
+          conversation: conversationText,
+          sessionId,
+          timestamp: new Date().toISOString()
+        },
+        {
+          priority: analysisModule.priority,
+          jobId: `${analysisModule.name}-${sessionId}`, // Unique job ID
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 1000
+          }
+        }
+      );
 
-    if (job.id) {
-      jobIds.push(job.id);
+      if (job.id) {
+        jobIds.push(job.id);
+        console.log(`Created job ${job.id} for module ${analysisModule.name}`);
+      } else {
+        console.error(`Failed to create job for module ${analysisModule.name}`);
+      }
     }
-  }
 
-  return jobIds;
+    return jobIds;
+  } catch (error) {
+    console.error('Error creating analysis jobs:', error);
+    throw new Error(`Failed to create analysis jobs: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
