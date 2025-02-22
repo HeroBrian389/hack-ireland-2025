@@ -226,3 +226,13 @@ model MetaReasoning {
 
     session        Session  @relation(fields: [sessionId], references: [id])
 }
+
+model GoogleFitTokens {
+    id           String   @id @default(uuid())
+    userId       String   @unique
+    accessToken  String
+    refreshToken String
+    expiryDate   BigInt
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+}
