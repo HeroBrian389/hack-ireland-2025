@@ -4,6 +4,7 @@ import { GeistSans } from "geist/font/sans";
 import { type Metadata } from "next";
 
 import { TRPCReactProvider } from "~/trpc/react";
+import { ConversationProvider } from "~/lib/context/ConversationContext";
 
 export const metadata: Metadata = {
   title: "Little Blue Booth - Health Kiosk",
@@ -17,7 +18,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${GeistSans.variable} dark`}>
       <body className="min-h-screen bg-[#020817] text-white antialiased">
-        <TRPCReactProvider>{children}</TRPCReactProvider>
+        <TRPCReactProvider>
+          <ConversationProvider>{children}</ConversationProvider>
+        </TRPCReactProvider>
       </body>
     </html>
   );
