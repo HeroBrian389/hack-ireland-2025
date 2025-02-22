@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, MicOff, Pause, Play, X, Check } from "lucide-react";
+import { Mic, MicOff, Pause, Play, X, Check, Video } from "lucide-react";
 
 // ────────────────────────────
 //  Hooks / Context
@@ -31,6 +31,7 @@ import type { UserAssistantMessage } from "~/lib/types";
 import type { JobState } from "bullmq";
 import { PulsingBlob } from "~/app/components/PulsingBlob";
 import type { WebRTCEvent } from "~/lib/hooks/useWebRTC";
+import VideoRecorder from "~/app/components/VideoRecorder";
 
 // ────────────────────────────
 //  Types (adjust paths as needed)
@@ -89,6 +90,7 @@ export default function HomePage() {
   const [analyzedFiles, setAnalyzedFiles] = useState<AnalyzedFile[]>([]);
   const [isAssistantSpeaking, setIsAssistantSpeaking] = useState(false);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [showVision, setShowVision] = useState(true);
 
   // ─────────────────────────────────────
   // Hooks
@@ -675,6 +677,15 @@ export default function HomePage() {
               {/* Render your messages here, e.g. map over messages */}
               <div ref={messagesEndRef} />
             </div>
+
+            {/* Vision Analysis Panel */}
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              className="w-full max-w-md mt-4 mx-auto"
+            >
+              <VideoRecorder sendMessage={sendMessage} />
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -685,13 +696,13 @@ export default function HomePage() {
           <>
             <PulsingBlob 
               isVisible={isAssistantSpeaking} 
-              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+              className="fixed left-1/2 bottom-[30%] -translate-x-1/2 -translate-y-[70%]"
             />
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 20 }}
-              className="fixed inset-x-0 top-1/2 z-50 mx-auto flex w-fit -translate-y-1/2 items-center justify-center gap-8"
+              className="fixed inset-x-0 top-2/3 z-50 mx-auto flex w-fit -translate-y-2/3 items-center justify-center gap-8"
             >
               <ControlButton icon={isMuted ? MicOff : Mic} onClick={toggleMic} />
               <ControlButton icon={isPaused ? Play : Pause} onClick={handleTogglePause} />
