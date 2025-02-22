@@ -4,7 +4,7 @@ import { kioskRouter } from "~/server/api/routers/kiosk-router";
 import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
 import { reasoningRouter } from "./reasoning_bots/reason";
 import { pollingrouter } from "./routers/polling";
-
+import { sessionRouter } from "./routers/session-router";
 /**
  * This is the primary router for your server.
  *
@@ -16,6 +16,7 @@ export const appRouter = createTRPCRouter({
   kiosk: kioskRouter,
   reasoning_bots: reasoningRouter,
   polling: pollingrouter,
+  session: sessionRouter,
 });
 
 // export type definition of API
