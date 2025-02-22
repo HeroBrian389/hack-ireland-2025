@@ -6,7 +6,6 @@ export const pollingrouter = createTRPCRouter({
   polling: publicProcedure
     .query(async () => {
         const completed = await myQueue.getCompleted();
-        console.log(completed);
         return completed.map(job => ({
           id: job.id,
           data: job.data

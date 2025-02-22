@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, MicOff, Pause, Play, X } from "lucide-react";
+import { Mic, MicOff, Pause, Play, X, Check } from "lucide-react";
 
 // ────────────────────────────
 //  Hooks / Context
@@ -29,6 +29,8 @@ import { AnalyzedFilesList } from "~/app/components/AnalyzedFilesList";
 import { InsightsList } from "~/app/components/InsightsList";
 import type { UserAssistantMessage } from "~/lib/types";
 import type { JobState } from "bullmq";
+import { PulsingBlob } from "~/app/components/PulsingBlob";
+import type { WebRTCEvent } from "~/lib/hooks/useWebRTC";
 
 // ────────────────────────────
 //  Types (adjust paths as needed)
@@ -85,6 +87,8 @@ export default function HomePage() {
   const [workerIds, setWorkerIds] = useState<string[]>([]);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [analyzedFiles, setAnalyzedFiles] = useState<AnalyzedFile[]>([]);
+  const [isAssistantSpeaking, setIsAssistantSpeaking] = useState(false);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
 
   // ─────────────────────────────────────
   // Hooks
@@ -149,6 +153,7 @@ export default function HomePage() {
   const lastAnalyzedMessageRef = useRef<{ timestamp: string; content: string } | null>(
     null
   );
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
 
   // ─────────────────────────────────────
   // Effects: Connection + Auto-Scroll
@@ -211,12 +216,15 @@ export default function HomePage() {
         .map(({ role, content }) => ({ role, content }));
 
       try {
-        const result = await analyzeMutation.mutateAsync(conversationForAnalysis);
+        const result = await analyzeMutation.mutateAsync({
+          messages: conversationForAnalysis,
+          sessionId: sessionId ?? "",
+        });
         if (result?.workerIds?.length) {
           setWorkerIds((prev) => [...prev, ...result.workerIds]);
         }
-      } catch (error) {
-        console.error("Analysis request failed:", error);
+      } catch (err) {
+        console.error("Analysis request failed:", err);
       }
     };
 
@@ -227,7 +235,7 @@ export default function HomePage() {
       }, 1000);
       return () => clearTimeout(timeoutId);
     }
-  }, [messages, isConsultationStarted, isPaused, analyzeMutation]);
+  }, [messages, isConsultationStarted, isPaused, analyzeMutation, sessionId]);
 
   // ─────────────────────────────────────
   // Effects: Handle completed jobs
@@ -414,6 +422,36 @@ export default function HomePage() {
     }
   }, [isConsultationStarted]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Add this effect after other useEffect hooks
+  useEffect(() => {
+    const handleAssistantSpeaking = (e: MessageEvent<string>) => {
+      try {
+        const event = JSON.parse(e.data) as WebRTCEvent;
+        if (
+          typeof event === "object" &&
+          event !== null &&
+          "type" in event &&
+          event.type === "conversation.item.created" &&
+          event.item?.role === "assistant"
+        ) {
+          setIsAssistantSpeaking(true);
+          // Reset after a short delay to account for potential pauses in speech
+          setTimeout(() => setIsAssistantSpeaking(false), 500);
+        }
+      } catch (error) {
+        console.error("Error handling assistant speaking event:", error);
+      }
+    };
+
+    const channel = dataChannelRef.current;
+    if (channel) {
+      channel.addEventListener("message", handleAssistantSpeaking);
+      return () => {
+        channel.removeEventListener("message", handleAssistantSpeaking);
+      };
+    }
+  }, []);
+
   // ─────────────────────────────────────
   // Animated background color logic
   // ─────────────────────────────────────
@@ -465,7 +503,7 @@ export default function HomePage() {
 
       {/* Worker & Analysis Status (top-right corner) */}
       {isConsultationStarted && (
-        <div className="absolute left-4 top-4 z-50 space-y-4">
+        <div className="absolute left-16 top-4 z-50 space-y-4">
           <WorkerStatus isPollingLoading={isPollingLoading} />
         </div>
       )}
@@ -587,14 +625,25 @@ export default function HomePage() {
             {/* Header */}
             <motion.div 
               className="mb-4 flex items-center gap-3"
-              initial={{ y: "50vh", scale: 2 }}
-              animate={{ y: 0, scale: 1 }}
-              transition={{ duration: 1.2, ease: "easeInOut" }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.6, ease: "easeInOut" }}
             >
-              <BoothLogo />
-              <span className="text-xl font-semibold text-blue-500">
-                Little Blue Booth
-              </span>
+              <motion.div
+                initial={{ y: "50vh", scale: 2, position: "fixed", left: "50%", x: "-50%" }}
+                animate={{ y: 0, scale: 1, position: "relative", left: "0%", x: "0%" }}
+                transition={{ 
+                  duration: 1.2,
+                  ease: "easeInOut",
+                  position: { delay: 1 }
+                }}
+                className="flex items-center gap-3"
+              >
+                <BoothLogo />
+                <span className="text-xl font-semibold text-blue-500">
+                  Little Blue Booth
+                </span>
+              </motion.div>
             </motion.div>
 
             {/* Connection Status */}
@@ -633,16 +682,28 @@ export default function HomePage() {
       {/* Control Buttons - Moved outside the container */}
       <AnimatePresence>
         {isConsultationStarted && isConnected && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="fixed inset-x-0 top-1/2 z-50 mx-auto flex w-fit -translate-y-1/2 items-center justify-center gap-8"
-          >
-            <ControlButton icon={isMuted ? MicOff : Mic} onClick={toggleMic} />
-            <ControlButton icon={isPaused ? Play : Pause} onClick={handleTogglePause} />
-            <ControlButton icon={X} onClick={() => setIsConfirmDialogOpen(true)} />
-          </motion.div>
+          <>
+            <PulsingBlob 
+              isVisible={isAssistantSpeaking} 
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="fixed inset-x-0 top-1/2 z-50 mx-auto flex w-fit -translate-y-1/2 items-center justify-center gap-8"
+            >
+              <ControlButton icon={isMuted ? MicOff : Mic} onClick={toggleMic} />
+              <ControlButton icon={isPaused ? Play : Pause} onClick={handleTogglePause} />
+              <ControlButton icon={X} onClick={() => setIsConfirmDialogOpen(true)} />
+              <ControlButton 
+                icon={Check} 
+                onClick={handleFinishConsultation}
+                disabled={isGeneratingSummary}
+                className={isGeneratingSummary ? "opacity-50" : ""}
+              />
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
 
@@ -674,3 +735,58 @@ export default function HomePage() {
     </main>
   );
 }
+
+// Move the function before the return statement, after all the hooks and effects
+const handleFinishConsultation = async () => {
+  try {
+    setIsGeneratingSummary(true);
+    
+    // Generate summary from conversation
+    const conversationForSummary = messages.map(({ role, content }: { role: string; content: string }) => ({
+      role,
+      content: content.trim(),
+    }));
+
+    // Add analyzed files to the summary context
+    if (analyzedFiles.length > 0) {
+      conversationForSummary.push({
+        role: "system",
+        content: "Analyzed Files:\n" + analyzedFiles.map(file => 
+          `${file.filename}: ${file.analysis}`
+        ).join("\n"),
+      });
+    }
+
+    // Add insights to the summary context
+    if (insights.length > 0) {
+      conversationForSummary.push({
+        role: "system",
+        content: "Key Insights:\n" + insights.map(insight => 
+          insight.content
+        ).join("\n"),
+      });
+    }
+
+    // Call the API to generate summary
+    const response = await fetch("/api/generate-summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation: conversationForSummary }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to generate summary");
+    }
+
+    const { summary } = await response.json();
+    
+    // Disconnect WebRTC
+    disconnect();
+    
+    // Redirect to end page with summary
+    router.push(`/end?summary=${encodeURIComponent(summary)}`);
+  } catch (error) {
+    console.error("Error generating summary:", error);
+    setIsGeneratingSummary(false);
+  }
+};

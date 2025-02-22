@@ -191,6 +191,30 @@ CREATE TABLE "MetaReasoning" (
     CONSTRAINT "MetaReasoning_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "Session" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
+-- CreateTable
+CREATE TABLE "AnalysisStatus" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "sessionId" TEXT NOT NULL,
+    "hasEnoughInformation" BOOLEAN NOT NULL,
+    "missingCriticalInfo" TEXT NOT NULL,
+    "recommendedNextSteps" TEXT NOT NULL,
+    "urgencyLevel" TEXT NOT NULL,
+    "reasoning" TEXT NOT NULL,
+    "timestamp" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "AnalysisStatus_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "Session" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "GoogleFitTokens" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "userId" TEXT NOT NULL,
+    "accessToken" TEXT NOT NULL,
+    "refreshToken" TEXT NOT NULL,
+    "expiryDate" BIGINT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);
+
 -- CreateIndex
 CREATE INDEX "Post_name_idx" ON "Post"("name");
 
@@ -199,3 +223,6 @@ CREATE UNIQUE INDEX "Conversation_sessionId_key" ON "Conversation"("sessionId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "DeviceType_typeKey_key" ON "DeviceType"("typeKey");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "GoogleFitTokens_userId_key" ON "GoogleFitTokens"("userId");

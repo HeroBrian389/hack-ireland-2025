@@ -10,13 +10,25 @@ const ConversationMessage = z.object({
   content: z.string(),
 });
 
+type Message = z.infer<typeof ConversationMessage>;
+
 // Define the conversation input schema
-const ConversationInput = z.array(ConversationMessage);
+const ConversationInput = z.object({
+  messages: z.array(ConversationMessage),
+  sessionId: z.string(),
+});
+
+interface JobData {
+  conversation: string;
+  sessionId: string;
+  processed?: string;
+  timestamp?: string;
+}
 
 interface JobResult {
   jobId: string;
   status: JobState | "not_found";
-  data: unknown | null;
+  data: unknown;
 }
 
 export const reasoningRouter = createTRPCRouter({
@@ -25,13 +37,16 @@ export const reasoningRouter = createTRPCRouter({
     .input(ConversationInput)
     .mutation(async ({ input }) => {
       try {
+        // Extract session ID and messages
+        const { sessionId, messages } = input;
+        
         // Gather user & assistant messages
-        const conversationText = input
-          .map((msg) => `[${msg.role}]: ${msg.content}`)
+        const conversationText = messages
+          .map((msg: Message) => `[${msg.role}]: ${msg.content}`)
           .join("\n");
 
-        // Create tasks
-        const workerIds = await createJobsFromConversation(conversationText);
+        // Create tasks with session ID
+        const workerIds = await createJobsFromConversation(conversationText, sessionId);
 
         console.log("workerIds", workerIds);
 
@@ -49,11 +64,9 @@ export const reasoningRouter = createTRPCRouter({
     .query(async ({ input }) => {
       const results: JobResult[] = [];
 
-      console.log("input.jobIds", input.jobIds);
-
       for (const jobId of input.jobIds) {
         try {
-          const job = await myQueue.getJob(jobId);
+          const job = await myQueue.getJob(jobId) as Job<JobData> | null;
 
           if (!job) {
             results.push({ jobId, status: "not_found", data: null });
@@ -61,12 +74,16 @@ export const reasoningRouter = createTRPCRouter({
           }
 
           const state = await job.getState();
-          const data = job.data;
+          // Handle unknown state case
+          if (state === "unknown") {
+            results.push({ jobId, status: "not_found", data: null });
+            continue;
+          }
 
           results.push({
             jobId,
             status: state,
-            data: data ?? null,
+            data: job.data ?? null,
           });
         } catch (error) {
           results.push({ jobId, status: "not_found", data: null });

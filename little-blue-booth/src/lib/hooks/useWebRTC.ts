@@ -47,7 +47,7 @@ interface SessionResponse {
   };
 }
 
-interface WebRTCEvent {
+export interface WebRTCEvent {
   type: string;
   transcript?: string;
   item?: {

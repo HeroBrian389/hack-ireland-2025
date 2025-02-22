@@ -55,6 +55,7 @@ model Session {
     realtimeSessions  RealtimeSession[]
     auditLogs         AuditLog[]
     continualFeeds    ContinualVisionFeed[]
+    analysisStatuses  AnalysisStatus[]
 }
 
 model Conversation {
@@ -225,6 +226,19 @@ model MetaReasoning {
     createdAt      DateTime @default(now())
 
     session        Session  @relation(fields: [sessionId], references: [id])
+}
+
+model AnalysisStatus {
+    id                   String   @id @default(uuid())
+    sessionId            String
+    hasEnoughInformation Boolean?
+    missingCriticalInfo  String?   // Stored as JSON string array
+    recommendedNextSteps String?   // Stored as JSON string array
+    urgencyLevel         String?   // "low" | "medium" | "high"
+    reasoning            String?
+    timestamp          DateTime @default(now())
+
+    session              Session  @relation(fields: [sessionId], references: [id])
 }
 
 model GoogleFitTokens {
