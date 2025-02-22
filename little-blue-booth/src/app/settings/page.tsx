@@ -57,17 +57,17 @@ export default function SettingsPage() {
           Settings
         </motion.h1>
 
+        <motion.h2
+          className="mb-4 text-xl font-semibold text-white"
+          variants={itemVariants}
+        >
+          Connected Services
+        </motion.h2>
+
         <motion.div
           className="rounded-lg border border-gray-800 bg-gray-900/50 p-6 shadow-lg backdrop-blur-sm"
           variants={itemVariants}
         >
-          <motion.h2
-            className="mb-4 text-xl font-semibold text-white"
-            variants={itemVariants}
-          >
-            Connected Services
-          </motion.h2>
-
           <motion.div className="space-y-4" variants={itemVariants}>
             <motion.div
               className="flex items-center justify-between"
