@@ -3,7 +3,7 @@ import "~/styles/globals.css";
 import { GeistSans } from "geist/font/sans";
 import { type Metadata } from "next";
 import { TRPCReactProvider } from "~/trpc/react";
-import { ClerkProvider } from "@clerk/nextjs";
+import { ClerkProvider, UserButton } from "@clerk/nextjs";
 import { ConversationProvider } from "~/lib/context/ConversationContext";
 
 export const metadata: Metadata = {
@@ -17,13 +17,18 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <ClerkProvider>
-    <html lang="en" className={`${GeistSans.variable} dark`}>
-      <body className="min-h-screen bg-[#020817] text-white antialiased">
-        <TRPCReactProvider>
-          <ConversationProvider>{children}</ConversationProvider>
-        </TRPCReactProvider>
-      </body>
-    </html>
+      <html lang="en" className={`${GeistSans.variable} dark`}>
+        <body className="min-h-screen bg-[#020817] text-white antialiased">
+          <TRPCReactProvider>
+            <ConversationProvider>
+              <div className="absolute right-4 top-4 z-10">
+                <UserButton />
+              </div>
+              {children}
+            </ConversationProvider>
+          </TRPCReactProvider>
+        </body>
+      </html>
     </ClerkProvider>
   );
 }

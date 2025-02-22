@@ -6,6 +6,8 @@ import { Mic, MicOff, Pause, Play, X } from "lucide-react";
 
 import { useConversation } from "~/lib/context/ConversationContext";
 import { useWebRTC } from "~/lib/hooks/useWebRTC";
+import { useAuth } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 
 const blankAnalysis = `[Background Analysis] No new hypotheses can be generated from the conversation so far.`;
 
@@ -171,6 +173,16 @@ export default function HomePage() {
     state: { messages },
   } = useConversation();
 
+  const { isSignedIn, isLoaded } = useAuth();
+  const router = useRouter();
+  
+  // Add authentication check
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      router.push("/sign-in");
+    }
+  }, [isLoaded, isSignedIn, router]);
+
   // Auto-scroll to bottom when messages update
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -230,6 +242,11 @@ export default function HomePage() {
         blob2: "translate-x-[25%] translate-y-[25%] from-indigo-500/30 to-cyan-500/30",
         blob3: "-translate-x-[25%] -translate-y-[25%] from-violet-500/30 to-blue-500/30",
       };
+
+  // If auth is still loading or user isn't signed in, don't render the page content
+  if (!isLoaded || !isSignedIn) {
+    return null;
+  }
 
   return (
     <main className="relative flex min-h-screen flex-col items-center overflow-hidden">
