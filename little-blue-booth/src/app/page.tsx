@@ -29,7 +29,7 @@ const ConfirmDialog = ({
 }: ConfirmDialogProps) => (
   <AnimatePresence>
     {isOpen && (
-      <div className="fixed inset-0 flex items-center justify-center z-50">
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -43,14 +43,14 @@ const ConfirmDialog = ({
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="relative w-full max-w-md bg-[#020817] p-6 rounded-lg border border-blue-500/20 shadow-xl mx-4"
+          className="relative mx-4 w-full max-w-md rounded-lg border border-blue-500/20 bg-[#020817] p-6 shadow-xl"
         >
-          <h2 className="text-xl font-semibold mb-2 text-white">{title}</h2>
-          <p className="text-gray-300 mb-6">{message}</p>
+          <h2 className="mb-2 text-xl font-semibold text-white">{title}</h2>
+          <p className="mb-6 text-gray-300">{message}</p>
           <div className="flex justify-end gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 rounded-md bg-gray-800 text-white hover:bg-gray-700 transition-colors"
+              className="rounded-md bg-gray-800 px-4 py-2 text-white transition-colors hover:bg-gray-700"
             >
               Cancel
             </button>
@@ -168,7 +168,7 @@ const ControlButton = ({
   </button>
 );
 
-// Add these interfaces before the HomePage component
+// File Upload Section Component
 interface UploadResponse {
   success: boolean;
   error?: string;
@@ -178,7 +178,6 @@ interface UploadResponse {
   }>;
 }
 
-// Add this new component before the HomePage component
 const FileUploadSection = ({
   files,
   setFiles,
@@ -213,17 +212,11 @@ const FileUploadSection = ({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="w-full max-w-xl mx-auto mb-8"
+      className="mx-auto mb-8 w-full max-w-xl"
     >
       <div className="relative">
         <div
-          className={`
-            relative overflow-hidden rounded-xl
-            bg-gradient-to-br from-blue-500/10 to-purple-600/10
-            backdrop-blur-sm border border-blue-500/20
-            transition-all duration-300
-            ${isDragging ? 'border-blue-400 bg-blue-500/20' : ''}
-          `}
+          className={`relative overflow-hidden rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-purple-600/10 backdrop-blur-sm transition-all duration-300 ${isDragging ? "border-blue-400 bg-blue-500/20" : ""} `}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
@@ -237,7 +230,7 @@ const FileUploadSection = ({
               transition={{ duration: 0.2 }}
             >
               <svg
-                className="w-12 h-12 text-blue-500"
+                className="h-12 w-12 text-blue-500"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -250,40 +243,41 @@ const FileUploadSection = ({
                 />
               </svg>
             </motion.div>
-            
-            <h3 className="text-xl font-semibold text-blue-100 mb-2">
+
+            <h3 className="mb-2 text-xl font-semibold text-blue-100">
               Upload Your Medical Files
             </h3>
-            <p className="text-blue-200/80 mb-4">
-              Drag and drop your scans or medical images here, or click to browse
+            <p className="mb-4 text-blue-200/80">
+              Drag and drop your scans or medical images here, or click to
+              browse
             </p>
-            
+
             <input
               type="file"
               multiple
               accept="image/*,.pdf,.dicom"
               onChange={(e) => setFiles(e.target.files)}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
             />
-            
+
             {files && files.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="mt-4"
               >
-                <div className="bg-blue-500/10 rounded-lg p-4 backdrop-blur-sm">
-                  <h4 className="text-blue-100 font-medium mb-2">
+                <div className="rounded-lg bg-blue-500/10 p-4 backdrop-blur-sm">
+                  <h4 className="mb-2 font-medium text-blue-100">
                     Selected Files ({files.length})
                   </h4>
                   <ul className="text-left">
                     {Array.from(files).map((file, index) => (
                       <li
                         key={index}
-                        className="text-blue-200/80 text-sm flex items-center gap-2 mb-1"
+                        className="mb-1 flex items-center gap-2 text-sm text-blue-200/80"
                       >
                         <svg
-                          className="w-4 h-4"
+                          className="h-4 w-4"
                           fill="none"
                           viewBox="0 0 24 24"
                           stroke="currentColor"
@@ -300,14 +294,14 @@ const FileUploadSection = ({
                     ))}
                   </ul>
                 </div>
-                
+
                 <motion.button
                   onClick={onUpload}
-                  className="group relative inline-flex items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 p-0.5 text-sm font-semibold text-white hover:text-white focus:outline-none focus:ring-4 focus:ring-blue-800 mt-4 w-full"
+                  className="group relative mt-4 inline-flex w-full items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 p-0.5 text-sm font-semibold text-white hover:text-white focus:outline-none focus:ring-4 focus:ring-blue-800"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                 >
-                  <span className="relative rounded-md bg-[#020817] px-6 py-2.5 transition-all duration-300 ease-in-out group-hover:bg-opacity-0 w-full">
+                  <span className="relative w-full rounded-md bg-[#020817] px-6 py-2.5 transition-all duration-300 ease-in-out group-hover:bg-opacity-0">
                     Upload & Analyze Files
                   </span>
                 </motion.button>
@@ -319,6 +313,162 @@ const FileUploadSection = ({
     </motion.div>
   );
 };
+
+// New WebcamFeed Component for Video Functionality
+const WebcamFeed = () => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isCameraActive && videoRef.current) {
+      navigator.mediaDevices
+        .getUserMedia({ video: true, audio: false })
+        .then((stream) => {
+          videoRef.current!.srcObject = stream;
+          videoRef.current!.play();
+        })
+        .catch((error) => {
+          console.error("❌ Error accessing the camera:", error);
+        });
+    } else {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => track.stop());
+        videoRef.current.srcObject = null;
+      }
+    }
+  }, [isCameraActive]);
+
+  const startCamera = () => setIsCameraActive(true);
+  const stopCamera = () => setIsCameraActive(false);
+
+  const sendImageToServer = async (imageDataUrl: string) => {
+    try {
+      const blob = await fetch(imageDataUrl).then((res) => res.blob());
+      const formData = new FormData();
+      formData.append("image", blob, "capture.png");
+
+      // ✅ Correct URL - No `.ts` or `route`
+      const response = await fetch("/api/handle_image", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok)
+        throw new Error(`HTTP error! Status: ${response.status}`);
+
+      const data = await response.json();
+      console.log("📤 Server Response:", data);
+    } catch (error) {
+      console.error("❌ Error sending image:", error);
+    }
+  };
+
+  const takePicture = async () => {
+    if (videoRef.current && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const context = canvas.getContext("2d");
+
+      if (context) {
+        canvas.width = videoRef.current.videoWidth;
+        canvas.height = videoRef.current.videoHeight;
+        context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+
+        const imageUrl = canvas.toDataURL("image/png");
+
+        console.log("📸 Captured Image Data URL:", imageUrl);
+
+        setCapturedImage(imageUrl);
+        await sendImageToServer(imageUrl); // ✅ Ensure it's awaited
+      }
+    }
+  };
+
+  useEffect(() => {
+    let isRunning = false;
+
+    const intervalId = setInterval(async () => {
+      if (isRunning) return;
+      isRunning = true;
+
+      try {
+        await takePicture(); // ✅ Ensure `takePicture()` is awaited
+      } catch (error) {
+        console.error("❌ Error capturing image:", error);
+      } finally {
+        isRunning = false;
+      }
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, []);
+
+  return (
+    <div className="text-center">
+      <div className="flex justify-center gap-4">
+        {isCameraActive ? (
+          <button
+            className="rounded-md bg-red-500 px-4 py-2 text-white"
+            onClick={stopCamera}
+          >
+            Stop Camera
+          </button>
+        ) : (
+          <button
+            className="rounded-md bg-green-500 px-4 py-2 text-white"
+            onClick={startCamera}
+          >
+            Start Camera
+          </button>
+        )}
+        {isCameraActive && (
+          <button
+            className="rounded-md bg-blue-500 px-4 py-2 text-white"
+            onClick={takePicture}
+          >
+            Take Picture
+          </button>
+        )}
+      </div>
+
+      {isCameraActive && (
+        <div className="mt-2">
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            className="w-full rounded-md"
+          />
+        </div>
+      )}
+
+      <canvas ref={canvasRef} className="hidden"></canvas>
+
+      {capturedImage && (
+        <div className="mt-4">
+          <h3 className="text-white">Captured Image:</h3>
+          <img
+            src={capturedImage}
+            alt="Captured"
+            className="rounded-md border border-gray-300"
+          />
+          <a
+            href={capturedImage}
+            download="captured_image.png"
+            className="mt-2 block rounded-md bg-blue-600 px-4 py-2 text-white"
+          >
+            Download Image
+          </a>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// export default WebcamFeed;
 
 export default function HomePage() {
   const [isConsultationStarted, setIsConsultationStarted] = useState(false);
@@ -347,7 +497,7 @@ export default function HomePage() {
 
   const { isSignedIn, isLoaded } = useAuth();
   const router = useRouter();
-  
+
   // Add authentication check
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -397,25 +547,31 @@ export default function HomePage() {
   const blobStyle = isPaused
     ? {
         blob1: "from-yellow-500/30 to-orange-500/30",
-        blob2: "translate-x-[25%] translate-y-[25%] from-yellow-500/30 to-orange-500/30",
-        blob3: "-translate-x-[25%] -translate-y-[25%] from-yellow-500/30 to-orange-500/30",
+        blob2:
+          "translate-x-[25%] translate-y-[25%] from-yellow-500/30 to-orange-500/30",
+        blob3:
+          "-translate-x-[25%] -translate-y-[25%] from-yellow-500/30 to-orange-500/30",
       }
     : isMuted
-    ? {
-        blob1: "from-gray-500/30 to-gray-700/30",
-        blob2: "translate-x-[25%] translate-y-[25%] from-gray-500/30 to-gray-700/30",
-        blob3: "-translate-x-[25%] -translate-y-[25%] from-gray-500/30 to-gray-700/30",
-      }
-    : {
-        blob1: "from-blue-500/30 to-purple-500/30",
-        blob2: "translate-x-[25%] translate-y-[25%] from-indigo-500/30 to-cyan-500/30",
-        blob3: "-translate-x-[25%] -translate-y-[25%] from-violet-500/30 to-blue-500/30",
-      };
+      ? {
+          blob1: "from-gray-500/30 to-gray-700/30",
+          blob2:
+            "translate-x-[25%] translate-y-[25%] from-gray-500/30 to-gray-700/30",
+          blob3:
+            "-translate-x-[25%] -translate-y-[25%] from-gray-500/30 to-gray-700/30",
+        }
+      : {
+          blob1: "from-blue-500/30 to-purple-500/30",
+          blob2:
+            "translate-x-[25%] translate-y-[25%] from-indigo-500/30 to-cyan-500/30",
+          blob3:
+            "-translate-x-[25%] -translate-y-[25%] from-violet-500/30 to-blue-500/30",
+        };
 
-  // If auth is still loading or user isn't signed in, don't render the page content
   if (!isLoaded || !isSignedIn) {
     return null;
   }
+
   // Handle file upload
   const handleUploadFiles = async () => {
     try {
@@ -424,29 +580,33 @@ export default function HomePage() {
         return;
       }
       const formData = new FormData();
-      
-      // Use for...of loop for better iteration
+
       for (const file of Array.from(files)) {
         formData.append("files", file);
       }
-      
+
       const sessionId = "FAKE-SESSION-ID-PRE-CONSULT";
       const response = await fetch(`/api/upload?sessionId=${sessionId}`, {
         method: "POST",
         body: formData,
       });
-      
+
       const result = (await response.json()) as UploadResponse;
-      
+
       if (!result.success) {
         throw new Error(result.error ?? "Unknown error");
       }
-      
+
       console.log("Uploaded and analyzed files:", result.results);
-      alert("Files uploaded and analyzed successfully! Check the console for details.");
+      alert(
+        "Files uploaded and analyzed successfully! Check the console for details.",
+      );
       setFiles(null);
     } catch (error) {
-      console.error("Upload error:", error instanceof Error ? error.message : "Unknown error");
+      console.error(
+        "Upload error:",
+        error instanceof Error ? error.message : "Unknown error",
+      );
       alert("Failed to upload/analyze files. Check console for error details.");
     }
   };
@@ -501,12 +661,15 @@ export default function HomePage() {
                 Your personal health consultation companion
               </motion.p>
 
-              {/* Replace the existing Add Files Section with the new component */}
+              {/* File Upload Section */}
               <FileUploadSection
                 files={files}
                 setFiles={setFiles}
                 onUpload={handleUploadFiles}
               />
+
+              {/* New WebcamFeed Section */}
+              {/* <WebcamFeed /> */}
 
               <motion.button
                 onClick={() => setIsConsultationStarted(true)}
@@ -529,10 +692,10 @@ export default function HomePage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="relative z-10 flex h-full w-full max-w-4xl flex-col items-center mx-auto p-4"
+            className="relative z-10 mx-auto flex h-full w-full max-w-4xl flex-col items-center p-4"
           >
             {/* Consultation Header */}
-            <div className="flex items-center gap-3 mb-4">
+            <div className="mb-4 flex items-center gap-3">
               <BoothLogo />
               <span className="text-xl font-semibold text-blue-500">
                 Little Blue Booth
@@ -566,8 +729,8 @@ export default function HomePage() {
             </motion.div>
 
             {/* Messages Container */}
-            <div className="flex-1 w-full overflow-y-auto">
-              {/* If you have messages to display, handle them here */}
+            <div className="w-full flex-1 overflow-y-auto">
+              {/* Display messages here */}
               <div ref={messagesEndRef} />
             </div>
 
@@ -577,11 +740,21 @@ export default function HomePage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 20 }}
-                className="sticky bottom-8 mt-8 flex gap-8 justify-center w-full"
+                className="sticky bottom-8 mt-8 flex w-full justify-center gap-8"
               >
-                <ControlButton icon={isMuted ? MicOff : Mic} onClick={toggleMic} />
-                <ControlButton icon={isPaused ? Play : Pause} onClick={handleTogglePause} />
-                <ControlButton icon={X} onClick={() => setIsConfirmDialogOpen(true)} />
+                <ControlButton
+                  icon={isMuted ? MicOff : Mic}
+                  onClick={toggleMic}
+                />
+                <ControlButton
+                  icon={isPaused ? Play : Pause}
+                  onClick={handleTogglePause}
+                />
+                <ControlButton
+                  icon={X}
+                  onClick={() => setIsConfirmDialogOpen(true)}
+                />
+                <WebcamFeed />
               </motion.div>
             )}
           </motion.div>
