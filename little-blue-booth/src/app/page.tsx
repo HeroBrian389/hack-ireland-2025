@@ -371,6 +371,13 @@ export default function HomePage() {
   const { isSignedIn, isLoaded, userId } = useAuth();
   const router = useRouter();
 
+  // Redirect to sign-in if not authenticated
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      router.push("/sign-in");
+    }
+  }, [isLoaded, isSignedIn, router]);
+
   // Use the kiosk session hook
   const { startSession, clearSession, isCreatingSession, error, sessionId } =
     useKioskSession({
@@ -462,7 +469,13 @@ export default function HomePage() {
 
   // If auth is still loading or user isn't signed in, don't render the page content
   if (!isLoaded || !isSignedIn) {
-    return null;
+    return (
+      <main className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-blue-500">Loading...</h2>
+        </div>
+      </main>
+    );
   }
   // Handle file upload
   const handleUploadFiles = async () => {
