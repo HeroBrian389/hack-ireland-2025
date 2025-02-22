@@ -14,6 +14,10 @@ export async function getAuthUrl(userId: string) {
   const scopes = [
     "https://www.googleapis.com/auth/fitness.activity.read",
     "https://www.googleapis.com/auth/fitness.heart_rate.read",
+    "https://www.googleapis.com/auth/fitness.blood_pressure.read",
+    "https://www.googleapis.com/auth/fitness.blood_glucose.read",
+    "https://www.googleapis.com/auth/fitness.oxygen_saturation.read",
+    "https://www.googleapis.com/auth/fitness.body.read",
   ];
 
   return oauth2Client.generateAuthUrl({
@@ -47,9 +51,14 @@ export async function handleCallback(code: string, userId: string) {
   });
 }
 
-export async function getFitData(
-  userId: string,
-): Promise<fitness_v1.Schema$AggregateResponse> {
+export async function getFitData(userId: string): Promise<{
+  bmi: number | null;
+  height: number | null;
+  weight: number | null;
+  heartRate: number | null;
+  bloodPressure: { systolic: number | null; diastolic: number | null } | null;
+  bloodOxygen: number | null;
+}> {
   const tokens = await db.googleFitTokens.findUnique({ where: { userId } });
   if (!tokens) {
     throw new Error("Not connected to Google Fit");
@@ -79,27 +88,90 @@ export async function getFitData(
 
   const fitness = google.fitness({ version: "v1", auth: oauth2Client });
   const now = Date.now();
-  const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+  // Get last 24 hours of data
+  const oneDayAgo = now - 24 * 60 * 60 * 1000;
 
   const response = await fitness.users.dataset.aggregate({
     userId: "me",
     requestBody: {
       aggregateBy: [
-        { dataTypeName: "com.google.step_count.delta" },
-        { dataTypeName: "com.google.calories.expended" },
         { dataTypeName: "com.google.heart_rate.bpm" },
-        { dataTypeName: "com.google.activity.segment" },
-        { dataTypeName: "com.google.sleep.segment" },
+        { dataTypeName: "com.google.blood_pressure" },
+        { dataTypeName: "com.google.oxygen_saturation" },
+        { dataTypeName: "com.google.weight" },
+        { dataTypeName: "com.google.height" },
+        { dataTypeName: "com.google.body.fat.percentage" }, // For BMI calculation
       ],
-      bucketByTime: { durationMillis: "86400000" },
-      startTimeMillis: thirtyDaysAgo.toString(),
+      bucketByTime: { durationMillis: "86400000" }, // 24 hours in milliseconds
+      startTimeMillis: oneDayAgo.toString(),
       endTimeMillis: now.toString(),
     },
   });
 
-  if (!response.data) {
-    throw new Error("No data returned from Google Fit");
+  if (
+    !response.data ||
+    !response.data.bucket ||
+    response.data.bucket.length === 0
+  ) {
+    return {
+      bmi: null,
+      height: null,
+      weight: null,
+      heartRate: null,
+      bloodPressure: null,
+      bloodOxygen: null,
+    };
   }
 
-  return response.data;
+  // Process the response data
+  const latestBucket = response.data.bucket[response.data.bucket.length - 1];
+  const result = {
+    bmi: null as number | null,
+    height: null as number | null,
+    weight: null as number | null,
+    heartRate: null as number | null,
+    bloodPressure: null as {
+      systolic: number | null;
+      diastolic: number | null;
+    } | null,
+    bloodOxygen: null as number | null,
+  };
+
+  // Helper function to get the latest value from a dataset
+  const getLatestValue = (dataset: any) => {
+    if (!dataset?.point?.[0]?.value?.[0]?.fpVal) return null;
+    return dataset.point[0].value[0].fpVal;
+  };
+
+  latestBucket.dataset?.forEach((dataset: any) => {
+    switch (dataset.dataSourceId) {
+      case "derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm":
+        result.heartRate = getLatestValue(dataset);
+        break;
+      case "derived:com.google.blood_pressure:com.google.android.gms:merged":
+        const systolic = dataset?.point?.[0]?.value?.[0]?.fpVal;
+        const diastolic = dataset?.point?.[0]?.value?.[1]?.fpVal;
+        if (systolic && diastolic) {
+          result.bloodPressure = { systolic, diastolic };
+        }
+        break;
+      case "derived:com.google.oxygen_saturation:com.google.android.gms:merged":
+        result.bloodOxygen = getLatestValue(dataset);
+        break;
+      case "derived:com.google.weight:com.google.android.gms:merged":
+        result.weight = getLatestValue(dataset);
+        break;
+      case "derived:com.google.height:com.google.android.gms:merged":
+        result.height = getLatestValue(dataset);
+        break;
+    }
+  });
+
+  // Calculate BMI if we have both height and weight
+  if (result.height && result.weight) {
+    const heightInMeters = result.height / 100; // Convert cm to meters
+    result.bmi = result.weight / (heightInMeters * heightInMeters);
+  }
+
+  return result;
 }

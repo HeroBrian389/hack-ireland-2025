@@ -4,8 +4,6 @@ import { Queue, Worker, Job } from "bullmq";
 import { query_chat_bot } from "./analyse_data";
 import { db } from "~/server/db";
 import OpenAI from "openai";
-import { runGoogleFitAnalysis } from "./google_fit_analysis";
-import { getFitData } from "~/services/googleFitService";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -37,9 +35,6 @@ export const worker = new Worker<JobData>(
       case "extractHealthMetrics":
         return runHealthMetricsExtraction(job);
 
-      case "extractGoogleFitData":
-        return runGoogleFitAnalysis(job);
-
       default:
         console.log(`Unknown job name ${job.name}`);
         break;
@@ -50,30 +45,6 @@ export const worker = new Worker<JobData>(
     concurrency: 50,
   },
 );
-
-async function runGoogleFitAnalysis(job: Job<JobData>) {
-  if (!job.data.sessionId) {
-    throw new Error("sessionId is required for Google Fit analysis");
-  }
-
-  // Get the session from the database to get userId
-  const session = await db.session.findUnique({
-    where: { id: job.data.sessionId },
-    select: { userId: true },
-  });
-
-  if (!session) {
-    throw new Error("Session not found");
-  }
-
-  const googleFitData = await getFitData(session.userId);
-
-  if (!googleFitData) {
-    throw new Error("No Google Fit data found");
-  }
-
-  return googleFitData;
-}
 
 // Another specialized function
 async function runRoughOverview(job: Job<JobData>) {
