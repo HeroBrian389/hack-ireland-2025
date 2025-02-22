@@ -23,9 +23,10 @@ import { ConfirmDialog } from "~/app/components/ConfirmDialog";
 import { ControlButton } from "~/app/components/ControlButton";
 import { FileUploadSection } from "~/app/components/FileUploadSection";
 import { SessionIdDisplay } from "~/app/components/SessionIdDisplay";
-import { ProcessedContentToast } from "~/app/components/ProcessedContentToast";
 import { WorkerStatus } from "~/app/components/WorkerStatus";
 import { AnalysisStatus } from "~/app/components/AnalysisStatus";
+import { AnalyzedFilesList } from "~/app/components/AnalyzedFilesList";
+import { InsightsList } from "~/app/components/InsightsList";
 import type { UserAssistantMessage } from "~/lib/types";
 import type { JobState } from "bullmq";
 
@@ -57,6 +58,19 @@ interface JobResult {
   data: JobData | null;
 }
 
+// Add this interface near the top with other interfaces
+interface AnalyzedFile {
+  filename: string;
+  analysis: string;
+  timestamp: string;
+}
+
+interface Insight {
+  id: string;
+  content: string;
+  timestamp: string;
+}
+
 export default function HomePage() {
   // ─────────────────────────────────────
   // Local state and refs
@@ -69,9 +83,8 @@ export default function HomePage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [lastAnalysisTimestamp, setLastAnalysisTimestamp] = useState<string | null>(null);
   const [workerIds, setWorkerIds] = useState<string[]>([]);
-  const [processedContents, setProcessedContents] = useState<
-    { id: string; content: string }[]
-  >([]);
+  const [insights, setInsights] = useState<Insight[]>([]);
+  const [analyzedFiles, setAnalyzedFiles] = useState<AnalyzedFile[]>([]);
 
   // ─────────────────────────────────────
   // Hooks
@@ -229,7 +242,7 @@ export default function HomePage() {
       return jobData.processed === true && typeof jobData.data === "string";
     }).map(job => ({
       ...job,
-      data: job.data as JobData // We know this is safe due to the filter above
+      data: job.data as JobData
     }));
 
     if (completedJobs.length > 0) {
@@ -240,14 +253,15 @@ export default function HomePage() {
         const currentTimestamp = new Date().toISOString();
         setLastAnalysisTimestamp(currentTimestamp);
 
-        // // Show toast
-        // setProcessedContents((prev) => [
-        //   ...prev,
-        //   {
-        //     id: job.jobId,
-        //     content: analysisData,
-        //   },
-        // ]);
+        // Add to insights
+        setInsights((prev) => [
+          ...prev,
+          {
+            id: job.jobId,
+            content: analysisData,
+            timestamp: currentTimestamp,
+          },
+        ]);
 
         // Send the analysis message into conversation
         sendMessage({
@@ -295,7 +309,20 @@ export default function HomePage() {
     }
   };
 
-  // Handle file upload
+  // Add this handler near other handlers
+  const handleFileClick = (file: AnalyzedFile) => {
+    if (!isConsultationStarted) return;
+    
+    sendMessage({
+      type: "response.create",
+      response: {
+        modalities: ["text"],
+        instructions: `[File Analysis] ${file.filename}: ${file.analysis}`,
+      },
+    });
+  };
+
+  // Modify the handleUploadFiles function
   const handleUploadFiles = async (uploadFiles: FileList) => {
     try {
       console.log("Uploading files:", uploadFiles);
@@ -308,24 +335,14 @@ export default function HomePage() {
 
       setIsUploading(true);
       setUploadError(null);
-
-      // Ensure we have a session
-      let currentSessionId: string;
-      try {
-        currentSessionId = await ensureSession(userId);
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : "Failed to create session";
-        setUploadError(errMsg);
-        setIsUploading(false);
-        return;
-      }
       
       const formData = new FormData();
       for (const file of Array.from(uploadFiles)) {
         formData.append("files", file);
       }
 
-      const response = await fetch(`/api/upload?sessionId=${currentSessionId}`, {
+      const uploadSessionId = sessionId ?? `temp_${userId}_${Date.now()}`;
+      const response = await fetch(`/api/upload?sessionId=${uploadSessionId}`, {
         method: "POST",
         body: formData,
       });
@@ -336,26 +353,41 @@ export default function HomePage() {
         results?: Array<{
           filename: string;
           analysis: string;
+          mediaId: string;
+          storageLocation?: string;
+          presignedUrl?: string;
         }>;
       };
-
-      console.log("Result:", result);
 
       if (!result.success) {
         throw new Error(result.error ?? "Failed to upload and analyze files");
       }
 
-      // If we have analysis results, send them to the conversation
+      // Store analysis results with timestamp
       if (result.results?.length) {
-        result.results.forEach(({ filename, analysis }) => {
-          sendMessage({
-            type: "response.create",
-            response: {
-              modalities: ["text"],
-              instructions: `[File Analysis] ${filename}: ${analysis}`,
-            },
+        const timestamp = new Date().toISOString();
+        const newAnalyzedFiles = result.results.map(({ filename, analysis, storageLocation, presignedUrl }) => ({
+          filename,
+          analysis,
+          timestamp,
+          storageLocation,
+          presignedUrl,
+        }));
+        
+        setAnalyzedFiles(prev => [...prev, ...newAnalyzedFiles]);
+
+        // If consultation is active, send to conversation immediately
+        if (isConsultationStarted) {
+          newAnalyzedFiles.forEach(({ filename, analysis }) => {
+            sendMessage({
+              type: "response.create",
+              response: {
+                modalities: ["text"],
+                instructions: `[File Analysis] ${filename}: ${analysis}`,
+              },
+            });
           });
-        });
+        }
       }
 
       setFiles(null);
@@ -366,6 +398,21 @@ export default function HomePage() {
       setIsUploading(false);
     }
   };
+
+  // Add effect to handle sending stored analyses when consultation starts
+  useEffect(() => {
+    if (isConsultationStarted && analyzedFiles.length > 0) {
+      analyzedFiles.forEach(({ filename, analysis }) => {
+        sendMessage({
+          type: "response.create",
+          response: {
+            modalities: ["text"],
+            instructions: `[File Analysis] ${filename}: ${analysis}`,
+          },
+        });
+      });
+    }
+  }, [isConsultationStarted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─────────────────────────────────────
   // Animated background color logic
@@ -418,7 +465,7 @@ export default function HomePage() {
 
       {/* Worker & Analysis Status (top-right corner) */}
       {isConsultationStarted && (
-        <div className="absolute right-4 top-4 z-50 space-y-4">
+        <div className="absolute left-4 top-4 z-50 space-y-4">
           <WorkerStatus isPollingLoading={isPollingLoading} />
         </div>
       )}
@@ -496,16 +543,9 @@ export default function HomePage() {
                 files={files} 
                 setFiles={setFiles} 
                 onUpload={handleUploadFiles} 
+                isProcessing={isUploading}
+                processedFiles={new Set(analyzedFiles.map(file => file.filename))}
               />
-              {isUploading && (
-                <motion.p
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="mt-4 text-blue-200"
-                >
-                  Uploading and analyzing files...
-                </motion.p>
-              )}
               {uploadError && (
                 <motion.p
                   initial={{ opacity: 0 }}
@@ -545,12 +585,17 @@ export default function HomePage() {
             className="relative z-10 mx-auto flex h-full w-full max-w-4xl flex-col items-center p-4"
           >
             {/* Header */}
-            <div className="mb-4 flex items-center gap-3">
+            <motion.div 
+              className="mb-4 flex items-center gap-3"
+              initial={{ y: "50vh", scale: 2 }}
+              animate={{ y: 0, scale: 1 }}
+              transition={{ duration: 1.2, ease: "easeInOut" }}
+            >
               <BoothLogo />
               <span className="text-xl font-semibold text-blue-500">
                 Little Blue Booth
               </span>
-            </div>
+            </motion.div>
 
             {/* Connection Status */}
             <motion.div
@@ -570,7 +615,7 @@ export default function HomePage() {
               ) : webRTCError ? (
                 <p className="text-lg text-red-400">{webRTCError}</p>
               ) : isConnected ? (
-                <p className="text-lg text-green-400">Connection established</p>
+                <p className="text-base text-gray-400">Connection established</p>
               ) : (
                 <p className="text-lg text-gray-400">Ready to connect</p>
               )}
@@ -581,20 +626,22 @@ export default function HomePage() {
               {/* Render your messages here, e.g. map over messages */}
               <div ref={messagesEndRef} />
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-            {/* Control Buttons */}
-            {isConnected && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20 }}
-                className="sticky bottom-8 mt-8 flex w-full justify-center gap-8"
-              >
-                <ControlButton icon={isMuted ? MicOff : Mic} onClick={toggleMic} />
-                <ControlButton icon={isPaused ? Play : Pause} onClick={handleTogglePause} />
-                <ControlButton icon={X} onClick={() => setIsConfirmDialogOpen(true)} />
-              </motion.div>
-            )}
+      {/* Control Buttons - Moved outside the container */}
+      <AnimatePresence>
+        {isConsultationStarted && isConnected && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed inset-x-0 top-1/2 z-50 mx-auto flex w-fit -translate-y-1/2 items-center justify-center gap-8"
+          >
+            <ControlButton icon={isMuted ? MicOff : Mic} onClick={toggleMic} />
+            <ControlButton icon={isPaused ? Play : Pause} onClick={handleTogglePause} />
+            <ControlButton icon={X} onClick={() => setIsConfirmDialogOpen(true)} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -608,19 +655,21 @@ export default function HomePage() {
         message="Are you sure you want to end this consultation? This action cannot be undone."
       />
 
-      {/* Processed Content Toasts */}
+      {/* Add InsightsList */}
       <AnimatePresence>
-        <div className="fixed bottom-24 right-4 z-50 space-y-4">
-          {processedContents.map((content) => (
-            <ProcessedContentToast
-              key={content.id}
-              content={content}
-              onComplete={(id: string) =>
-                setProcessedContents((prev) => prev.filter((c) => c.id !== id))
-              }
-            />
-          ))}
-        </div>
+        {isConsultationStarted && insights.length > 0 && (
+          <InsightsList insights={insights} />
+        )}
+      </AnimatePresence>
+
+      {/* Add the AnalyzedFilesList component near the top of the return statement */}
+      <AnimatePresence>
+        {analyzedFiles.length > 0 && (
+          <AnalyzedFilesList
+            files={analyzedFiles}
+            onFileClick={handleFileClick}
+          />
+        )}
       </AnimatePresence>
     </main>
   );
