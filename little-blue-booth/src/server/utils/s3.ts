@@ -3,10 +3,10 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { env } from "~/env";
 
 export const s3Client = new S3Client({
-  region: env.server.AWS_REGION,
+  region: env.AWS_REGION,
   credentials: {
-    accessKeyId: env.server.AWS_ACCESS_KEY_ID,
-    secretAccessKey: env.server.AWS_SECRET_ACCESS_KEY,
+    accessKeyId: env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
   },
 });
 
@@ -26,5 +26,5 @@ export async function uploadToS3(bucket: string, key: string, body: Buffer, mime
       ContentType: mimeType,
     }),
   );
-  return `https://${bucket}.s3.${env.server.AWS_REGION}.amazonaws.com/${key}`;
+  return `https://${bucket}.s3.${env.AWS_REGION}.amazonaws.com/${key}`;
 }

@@ -26,13 +26,36 @@ import { SessionIdDisplay } from "~/app/components/SessionIdDisplay";
 import { ProcessedContentToast } from "~/app/components/ProcessedContentToast";
 import { WorkerStatus } from "~/app/components/WorkerStatus";
 import { AnalysisStatus } from "~/app/components/AnalysisStatus";
-import type { UserAssistantMessage, WorkerJob } from "~/lib/types";
+import type { UserAssistantMessage } from "~/lib/types";
+import type { JobState } from "bullmq";
 
 // ────────────────────────────
 //  Types (adjust paths as needed)
 // ────────────────────────────
 // Example: If you have a global types file or store them in a `types.ts`:
 
+interface WorkerJobData {
+  processed: string;
+  [key: string]: unknown;
+}
+
+interface WorkerJob {
+  jobId: string;
+  status: string;
+  data: WorkerJobData;
+}
+
+// Define the API types
+interface JobData {
+  processed: boolean;
+  data: string;
+}
+
+interface JobResult {
+  jobId: string;
+  status: JobState | "not_found";
+  data: JobData | null;
+}
 
 export default function HomePage() {
   // ─────────────────────────────────────
@@ -42,6 +65,8 @@ export default function HomePage() {
   const [isPaused, setIsPaused] = useState(false);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [files, setFiles] = useState<FileList | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [lastAnalysisTimestamp, setLastAnalysisTimestamp] = useState<string | null>(null);
   const [workerIds, setWorkerIds] = useState<string[]>([]);
   const [processedContents, setProcessedContents] = useState<
@@ -65,8 +90,7 @@ export default function HomePage() {
   }, [isLoaded, isSignedIn, router]);
 
   // Use the kiosk session hook
-  // Kiosk session (start/clear)
-  const { startSession, clearSession, isCreatingSession, error, sessionId } =
+  const { startSession, clearSession, ensureSession, isCreatingSession, error, sessionId } =
     useKioskSession({
       onSessionCreated: () => setIsConsultationStarted(true),
       onError: () => setIsConsultationStarted(false),
@@ -78,13 +102,14 @@ export default function HomePage() {
   } = useConversation();
 
   // Polling worker data
-  const { data: workerData, isLoading: isPollingLoading } = api.polling.polling.useQuery<
-    WorkerJob[]
-  >(undefined, {
-    refetchInterval: 2000,
-    refetchIntervalInBackground: true,
-    enabled: isConsultationStarted, // poll only if consultation is active
-  });
+  const { data: workerData, isLoading: isPollingLoading } = api.polling.polling.useQuery(
+    undefined,
+    {
+      refetchInterval: 2000,
+      refetchIntervalInBackground: true,
+      enabled: isConsultationStarted,
+    }
+  );
 
   // Analyze conversation
   const analyzeMutation = api.reasoning_bots.analyzeConversation.useMutation({
@@ -192,44 +217,49 @@ export default function HomePage() {
   }, [messages, isConsultationStarted, isPaused, analyzeMutation]);
 
   // ─────────────────────────────────────
-  // Handle completed jobs (jobStatuses)
+  // Effects: Handle completed jobs
   // ─────────────────────────────────────
   useEffect(() => {
     if (!jobStatuses) return;
 
     // Completed jobs
-    const completedJobs = jobStatuses.filter(
-      (js) => js.status === "completed" && js.data?.processed
-    );
+    const completedJobs = jobStatuses.filter((js): js is JobResult => {
+      if (js.status !== "completed" || !js.data) return false;
+      const jobData = js.data as JobData;
+      return jobData.processed === true && typeof jobData.data === "string";
+    }).map(job => ({
+      ...job,
+      data: job.data as JobData // We know this is safe due to the filter above
+    }));
 
     if (completedJobs.length > 0) {
       completedJobs.forEach((job) => {
-        if (job.data?.processed && typeof job.data.processed === "string") {
-          // Timestamp
-          const currentTimestamp = new Date().toISOString();
-          setLastAnalysisTimestamp(currentTimestamp);
+        const analysisData = job.data.data;
+        
+        // Timestamp
+        const currentTimestamp = new Date().toISOString();
+        setLastAnalysisTimestamp(currentTimestamp);
 
-          // Show toast
-          setProcessedContents((prev) => [
-            ...prev,
-            {
-              id: job.jobId,
-              content: job.data.processed as string,
-            },
-          ]);
+        // // Show toast
+        // setProcessedContents((prev) => [
+        //   ...prev,
+        //   {
+        //     id: job.jobId,
+        //     content: analysisData,
+        //   },
+        // ]);
 
-          // Send the analysis message into conversation
-          sendMessage({
-            type: "response.create",
-            response: {
-              modalities: ["text"],
-              instructions: `[Background Analysis] ${job.data.processed}`,
-            },
-          });
-        }
+        // Send the analysis message into conversation
+        sendMessage({
+          type: "response.create",
+          response: {
+            modalities: ["text"],
+            instructions: `[Background Analysis] ${analysisData}`,
+          },
+        });
       });
 
-      // Remove completed job IDs from workerIds to avoid infinite polling
+      // Remove completed job IDs from workerIds
       setWorkerIds((prev) =>
         prev.filter((id) => !completedJobs.find((job) => job.jobId === id))
       );
@@ -265,49 +295,75 @@ export default function HomePage() {
     }
   };
 
-  // If auth is still loading or user isn't signed in, don't render the page content
-  if (!isLoaded || !isSignedIn) {
-    return (
-      <main className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold text-blue-500">Loading...</h2>
-        </div>
-      </main>
-    );
-  }
   // Handle file upload
-  const handleUploadFiles = async () => {
+  const handleUploadFiles = async (uploadFiles: FileList) => {
     try {
-      if (!files || files.length === 0) {
-        alert("Please select at least one file first.");
+      console.log("Uploading files:", uploadFiles);
+      if (uploadFiles.length === 0) return;
+      
+      if (!userId) {
+        setUploadError("Please sign in to upload files");
         return;
       }
+
+      setIsUploading(true);
+      setUploadError(null);
+
+      // Ensure we have a session
+      let currentSessionId: string;
+      try {
+        currentSessionId = await ensureSession(userId);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : "Failed to create session";
+        setUploadError(errMsg);
+        setIsUploading(false);
+        return;
+      }
+      
       const formData = new FormData();
-      for (const file of Array.from(files)) {
+      for (const file of Array.from(uploadFiles)) {
         formData.append("files", file);
       }
 
-      // If you have an actual sessionId, use it here
-      const fakeSessionId = "FAKE-SESSION-ID-PRE-CONSULT";
-      const response = await fetch(`/api/upload?sessionId=${fakeSessionId}`, {
+      const response = await fetch(`/api/upload?sessionId=${currentSessionId}`, {
         method: "POST",
         body: formData,
       });
 
-      const result = await response.json();
+      const result = await response.json() as {
+        success: boolean;
+        error?: string;
+        results?: Array<{
+          filename: string;
+          analysis: string;
+        }>;
+      };
+
+      console.log("Result:", result);
+
       if (!result.success) {
-        throw new Error(result.error ?? "Unknown error");
+        throw new Error(result.error ?? "Failed to upload and analyze files");
       }
 
-      console.log("Uploaded and analyzed files:", result.results);
-      alert("Files uploaded and analyzed successfully! Check the console for details.");
+      // If we have analysis results, send them to the conversation
+      if (result.results?.length) {
+        result.results.forEach(({ filename, analysis }) => {
+          sendMessage({
+            type: "response.create",
+            response: {
+              modalities: ["text"],
+              instructions: `[File Analysis] ${filename}: ${analysis}`,
+            },
+          });
+        });
+      }
+
       setFiles(null);
     } catch (error) {
-      console.error(
-        "Upload error:",
-        error instanceof Error ? error.message : "Unknown error"
-      );
-      alert("Failed to upload/analyze files. Check console for error details.");
+      console.error("Upload error:", error);
+      setUploadError(error instanceof Error ? error.message : "Failed to upload files");
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -316,20 +372,29 @@ export default function HomePage() {
   // ─────────────────────────────────────
   const blobStyle = isPaused
     ? {
-        blob1: "from-yellow-500/30 to-orange-500/30",
-        blob2: "translate-x-[25%] translate-y-[25%] from-yellow-500/30 to-orange-500/30",
-        blob3: "-translate-x-[25%] -translate-y-[25%] from-yellow-500/30 to-orange-500/30",
+        blob1: "left-[20%] top-[30%] from-yellow-500/30 to-orange-500/30",
+        blob2: "left-[80%] top-[70%] from-yellow-500/30 to-orange-500/30",
+        blob3: "left-[70%] top-[20%] from-yellow-500/30 to-orange-500/30",
+        blob4: "left-[30%] top-[80%] from-amber-500/30 to-yellow-500/30",
+        blob5: "left-[85%] top-[40%] from-orange-500/30 to-red-500/30",
+        blob6: "left-[40%] top-[50%] from-yellow-600/20 to-amber-400/20",
       }
     : isMuted
     ? {
-        blob1: "from-gray-500/30 to-gray-700/30",
-        blob2: "translate-x-[25%] translate-y-[25%] from-gray-500/30 to-gray-700/30",
-        blob3: "-translate-x-[25%] -translate-y-[25%] from-gray-500/30 to-gray-700/30",
+        blob1: "left-[20%] top-[30%] from-gray-500/30 to-gray-700/30",
+        blob2: "left-[80%] top-[70%] from-gray-500/30 to-gray-700/30",
+        blob3: "left-[70%] top-[20%] from-gray-500/30 to-gray-700/30",
+        blob4: "left-[30%] top-[80%] from-gray-600/30 to-gray-800/30",
+        blob5: "left-[85%] top-[40%] from-gray-400/30 to-gray-600/30",
+        blob6: "left-[40%] top-[50%] from-gray-500/20 to-gray-700/20",
       }
     : {
-        blob1: "from-blue-500/30 to-purple-500/30",
-        blob2: "translate-x-[25%] translate-y-[25%] from-indigo-500/30 to-cyan-500/30",
-        blob3: "-translate-x-[25%] -translate-y-[25%] from-violet-500/30 to-blue-500/30",
+        blob1: "left-[20%] top-[30%] from-blue-500/30 to-purple-500/30",
+        blob2: "left-[80%] top-[70%] from-indigo-500/30 to-cyan-500/30",
+        blob3: "left-[70%] top-[20%] from-violet-500/30 to-blue-500/30",
+        blob4: "left-[30%] top-[80%] from-cyan-400/30 to-teal-500/30",
+        blob5: "left-[85%] top-[40%] from-fuchsia-500/30 to-pink-500/30",
+        blob6: "left-[40%] top-[50%] from-blue-600/20 to-indigo-400/20",
       };
 
   // ─────────────────────────────────────
@@ -354,32 +419,50 @@ export default function HomePage() {
       {/* Worker & Analysis Status (top-right corner) */}
       {isConsultationStarted && (
         <div className="absolute right-4 top-4 z-50 space-y-4">
-          <WorkerStatus workerData={workerData} isPollingLoading={isPollingLoading} />
-          <AnalysisStatus
-            isAnalyzing={analyzeMutation.isPending}
-            analysisError={analyzeMutation.isError ? analyzeMutation.error.message : null}
-            lastAnalysisTimestamp={lastAnalysisTimestamp}
-          />
+          <WorkerStatus isPollingLoading={isPollingLoading} />
         </div>
       )}
 
       {/* Animated Blob Background */}
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <Blob
-          className={blobStyle.blob1}
-          scale={isLoading ? 1.2 : 1}
-          animate={isLoading || isPaused || isMuted}
-        />
-        <Blob
-          className={blobStyle.blob2}
-          scale={isLoading ? 1.3 : 1}
-          animate={isLoading || isPaused || isMuted}
-        />
-        <Blob
-          className={blobStyle.blob3}
-          scale={isLoading ? 1.1 : 1}
-          animate={isLoading || isPaused || isMuted}
-        />
+      <div className="pointer-events-none fixed inset-0 h-screen w-screen overflow-hidden">
+        <motion.div 
+          className="absolute inset-0"
+          initial={false}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <Blob
+            className={`absolute ${blobStyle.blob1} z-10`}
+            scale={1}
+            animate={true}
+          />
+          <Blob
+            className={`absolute ${blobStyle.blob2} z-20`}
+            scale={1.1}
+            animate={true}
+          />
+          <Blob
+            className={`absolute ${blobStyle.blob3} z-30`}
+            scale={0.9}
+            animate={true}
+          />
+          <Blob
+            className={`absolute ${blobStyle.blob4} z-10`}
+            scale={1.2}
+            animate={true}
+          />
+          <Blob
+            className={`absolute ${blobStyle.blob5} z-20`}
+            scale={1}
+            animate={true}
+          />
+          <Blob
+            className={`absolute ${blobStyle.blob6} z-30`}
+            scale={1.3}
+            animate={true}
+          />
+        </motion.div>
       </div>
 
       {/* Landing / Welcome View */}
@@ -409,7 +492,29 @@ export default function HomePage() {
               </motion.p>
 
               {/* File Upload Section */}
-              <FileUploadSection files={files} setFiles={setFiles} onUpload={handleUploadFiles} />
+              <FileUploadSection 
+                files={files} 
+                setFiles={setFiles} 
+                onUpload={handleUploadFiles} 
+              />
+              {isUploading && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="mt-4 text-blue-200"
+                >
+                  Uploading and analyzing files...
+                </motion.p>
+              )}
+              {uploadError && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="mt-4 text-red-400"
+                >
+                  {uploadError}
+                </motion.p>
+              )}
 
               <motion.button
                 onClick={handleStartConsultation}
@@ -505,7 +610,7 @@ export default function HomePage() {
 
       {/* Processed Content Toasts */}
       <AnimatePresence>
-        <div className="fixed right-4 top-40 z-50 space-y-4">
+        <div className="fixed bottom-24 right-4 z-50 space-y-4">
           {processedContents.map((content) => (
             <ProcessedContentToast
               key={content.id}

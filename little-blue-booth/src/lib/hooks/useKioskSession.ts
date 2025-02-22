@@ -1,6 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "~/trpc/react";
-import { v4 as uuidv4 } from "uuid";
 
 interface UseKioskSessionProps {
   onSessionCreated?: () => void;
@@ -13,7 +12,21 @@ export function useKioskSession({
 }: UseKioskSessionProps = {}) {
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [kioskId, setKioskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Get or create kiosk query
+  const { data: kioskData } = api.kiosk.getOrCreateKiosk.useQuery(undefined, {
+    retry: 2,
+  });
+
+  // Set kiosk ID when data is available
+  useEffect(() => {
+    if (kioskData?.id) {
+      setKioskId(kioskData.id);
+      setError(null);
+    }
+  }, [kioskData]);
 
   // Create session mutation
   const createSession = api.kiosk.createSession.useMutation({
@@ -41,8 +54,9 @@ export function useKioskSession({
         throw new Error("User not authenticated");
       }
 
-      // Generate a kiosk ID (in a real app, this would come from the kiosk itself)
-      const kioskId = uuidv4();
+      if (!kioskId) {
+        throw new Error("No kiosk available");
+      }
 
       // Create a new session
       await createSession.mutateAsync({
@@ -58,6 +72,25 @@ export function useKioskSession({
     }
   };
 
+  const ensureSession = async (userId: string) => {
+    if (sessionId) return sessionId;
+    
+    if (!userId) {
+      throw new Error("User not authenticated");
+    }
+
+    if (!kioskId) {
+      throw new Error("No kiosk available");
+    }
+
+    const session = await createSession.mutateAsync({
+      kioskId,
+      userId,
+    });
+
+    return session.id;
+  };
+
   const clearSession = () => {
     setSessionId(null);
     setError(null);
@@ -66,8 +99,10 @@ export function useKioskSession({
   return {
     startSession,
     clearSession,
+    ensureSession,
     isCreatingSession,
     sessionId,
+    kioskId,
     error,
   };
 }

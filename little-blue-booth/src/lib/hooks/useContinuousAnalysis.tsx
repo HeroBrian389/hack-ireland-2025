@@ -68,7 +68,7 @@ export function useContinuousAnalysis({
     if (isConsultationStarted && !isPaused) {
       const timeoutId = setTimeout(() => {
         void performContinuousAnalysis();
-      }, 1000);
+      }, 2000);
       return () => clearTimeout(timeoutId);
     }
   }, [messages, isConsultationStarted, isPaused, analyzeMutation, setWorkerIds, sendMessage]);

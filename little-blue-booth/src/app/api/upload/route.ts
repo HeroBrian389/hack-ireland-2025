@@ -10,7 +10,7 @@ import { uploadToS3 } from "~/server/utils/s3";
 import { convertPdfToImagesAndUpload } from "~/server/utils/pdfToImages";
 
 const openai = new OpenAI({
-  apiKey: env.server.OPENAI_API_KEY,
+  apiKey: env.OPENAI_API_KEY,
 });
 
 /**
@@ -44,6 +44,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Verify the session exists
+    const session = await db.session.findUnique({
+      where: { id: sessionId },
+      select: { id: true, state: true }
+    });
+
+    if (!session) {
+      return NextResponse.json(
+        { success: false, error: "Invalid session ID" },
+        { status: 404 },
+      );
+    }
+
+    if (session.state !== "IN_PROGRESS") {
+      return NextResponse.json(
+        { success: false, error: "Session is not in progress" },
+        { status: 400 },
+      );
+    }
+
     const results: Array<{
       fileName: string;
       mediaId: string;
@@ -54,7 +74,7 @@ export async function POST(request: NextRequest) {
     for (const file of files) {
       const fileArrayBuffer = await file.arrayBuffer();
       const fileBuffer = Buffer.from(fileArrayBuffer);
-      const fileExt = file.name.split(".").pop()?.toLowerCase();
+      const fileExt = file.name.split(".").pop()?.toLowerCase() ?? "";
       const fileId = randomUUID();
       const baseKey = `uploads/${fileId}`;
 
@@ -97,32 +117,31 @@ export async function POST(request: NextRequest) {
       //     We'll combine all pages or images in one prompt for demonstration,
       //     but you can do them individually if you want separate analyses.
       //     Here we call GPT-4o or GPT-4 with image URLs:
-      const messages: any = [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Please summarize what is in these images." },
-          ],
-        },
-      ];
-
-      for (const location of finalStoredLocations) {
-        messages[0].content.push({
-          type: "image_url",
-          image_url: { url: location },
-        });
-      }
+      const messages = [{
+        role: "user" as const,
+        content: [
+          { type: "text" as const, text: "Please summarize what is in these images." },
+          ...finalStoredLocations.map(location => ({
+            type: "image_url" as const,
+            image_url: { url: location }
+          }))
+        ]
+      }];
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages,
         store: true,
       });
-      const analysis = completion.choices[0]?.message?.content ?? "";
+      const analysis = completion.choices[0]?.message?.content ?? "No analysis available";
 
       // 2d) Store analysis in VisionAnalysis table
-      //     For simplicity, we just store one combined analysis for the entire file’s images
+      //     For simplicity, we just store one combined analysis for the entire file's images
       const firstMedia = insertedMedias[0];
+      if (!firstMedia) {
+        throw new Error("Failed to create media record");
+      }
+
       const visionAnalysis = await db.visionAnalysis.create({
         data: {
           mediaId: firstMedia.id,
@@ -135,7 +154,7 @@ export async function POST(request: NextRequest) {
       results.push({
         fileName: file.name,
         mediaId: firstMedia.id,
-        analysis: visionAnalysis.analysisResults,
+        analysis: visionAnalysis.analysisResults ?? "No analysis available",
       });
     }
 

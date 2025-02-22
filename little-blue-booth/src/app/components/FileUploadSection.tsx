@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 interface FileUploadSectionProps {
   files: FileList | null;
   setFiles: (files: FileList | null) => void;
-  onUpload: () => void;
+  onUpload: (files: FileList) => void;
 }
 
 export const FileUploadSection = ({
@@ -31,6 +31,7 @@ export const FileUploadSection = ({
     setIsDragging(false);
     if (e.dataTransfer.files) {
       setFiles(e.dataTransfer.files);
+      onUpload(e.dataTransfer.files);
     }
   };
 
@@ -82,7 +83,12 @@ export const FileUploadSection = ({
               type="file"
               multiple
               accept="image/*,.pdf,.dicom"
-              onChange={(e) => setFiles(e.target.files)}
+              onChange={(e) => {
+                if (e.target.files) {
+                  setFiles(e.target.files);
+                  onUpload(e.target.files);
+                }
+              }}
               className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
             />
 
@@ -120,17 +126,6 @@ export const FileUploadSection = ({
                     ))}
                   </ul>
                 </div>
-
-                <motion.button
-                  onClick={onUpload}
-                  className="group relative mt-4 inline-flex w-full items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 p-0.5 text-sm font-semibold text-white hover:text-white focus:outline-none focus:ring-4 focus:ring-blue-800"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <span className="relative w-full rounded-md bg-[#020817] px-6 py-2.5 transition-all duration-300 ease-in-out group-hover:bg-opacity-0">
-                    Upload & Analyze Files
-                  </span>
-                </motion.button>
               </motion.div>
             )}
           </div>
