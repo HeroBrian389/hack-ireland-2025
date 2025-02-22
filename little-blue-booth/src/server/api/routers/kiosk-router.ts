@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { TRPCError } from "@trpc/server";
+import { randomUUID } from "crypto";
 
 const createSessionSchema = z.object({
   kioskId: z.string().uuid(),
@@ -8,6 +9,29 @@ const createSessionSchema = z.object({
 });
 
 export const kioskRouter = createTRPCRouter({
+  getOrCreateKiosk: publicProcedure.query(async ({ ctx }) => {
+    // Try to find an active kiosk first (in a real app, you might have logic to find the nearest one)
+    const activeKiosk = await ctx.db.kiosk.findFirst({
+      where: { status: "ACTIVE" },
+      select: { id: true },
+    });
+
+    if (activeKiosk) {
+      return activeKiosk;
+    }
+
+    // If no active kiosk found, create a new one
+    const newKiosk = await ctx.db.kiosk.create({
+      data: {
+        id: randomUUID(),
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+
+    return newKiosk;
+  }),
+
   createSession: publicProcedure
     .input(createSessionSchema)
     .mutation(async ({ ctx, input }) => {
@@ -42,9 +66,13 @@ export const kioskRouter = createTRPCRouter({
       });
 
       if (activeSession) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "An active session already exists for this kiosk",
+        // End the existing session
+        await ctx.db.session.update({
+          where: { id: activeSession.id },
+          data: {
+            state: "COMPLETED",
+            endTime: new Date(),
+          },
         });
       }
 
@@ -65,7 +93,9 @@ export const kioskRouter = createTRPCRouter({
           ctx.db.auditLog.create({
             data: {
               eventType: "info",
-              description: "New session created",
+              description: activeSession 
+                ? "New session created (previous session ended)"
+                : "New session created",
               sessionId: session.id,
               userId,
               associatedId: kioskId,

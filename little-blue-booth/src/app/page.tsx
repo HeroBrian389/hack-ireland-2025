@@ -1,372 +1,83 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mic, MicOff, Pause, Play, X } from "lucide-react";
+
+// ────────────────────────────
+//  Hooks / Context
+// ────────────────────────────
 import { useConversation } from "~/lib/context/ConversationContext";
 import { useWebRTC } from "~/lib/hooks/useWebRTC";
 import { useKioskSession } from "~/lib/hooks/useKioskSession";
-import { useAuth } from "@clerk/nextjs";
-import { useRouter } from "next/navigation";
+import { api } from "~/trpc/react";
 
-const blankAnalysis = `[Background Analysis] No new hypotheses can be generated from the conversation so far.`;
+// ────────────────────────────
+//  Components
+// ────────────────────────────
+import { BoothLogo } from "~/app/components/BoothLogo";
+import { Blob } from "~/app/components/Blob";
+import { ConfirmDialog } from "~/app/components/ConfirmDialog";
+import { ControlButton } from "~/app/components/ControlButton";
+import { FileUploadSection } from "~/app/components/FileUploadSection";
+import { SessionIdDisplay } from "~/app/components/SessionIdDisplay";
+import { ProcessedContentToast } from "~/app/components/ProcessedContentToast";
+import { WorkerStatus } from "~/app/components/WorkerStatus";
+import { AnalysisStatus } from "~/app/components/AnalysisStatus";
+import type { UserAssistantMessage } from "~/lib/types";
+import type { JobState } from "bullmq";
 
-// Confirmation Dialog Component
-interface ConfirmDialogProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  title: string;
-  message: string;
+// ────────────────────────────
+//  Types (adjust paths as needed)
+// ────────────────────────────
+// Example: If you have a global types file or store them in a `types.ts`:
+
+interface WorkerJobData {
+  processed: string;
+  [key: string]: unknown;
 }
 
-const ConfirmDialog = ({
-  isOpen,
-  onClose,
-  onConfirm,
-  title,
-  message,
-}: ConfirmDialogProps) => (
-  <AnimatePresence>
-    {isOpen && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
-        {/* Backdrop */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="absolute inset-0 bg-black/50"
-          onClick={onClose}
-        />
-        {/* Dialog */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="relative mx-4 w-full max-w-md rounded-lg border border-blue-500/20 bg-[#020817] p-6 shadow-xl"
-        >
-          <h2 className="mb-2 text-xl font-semibold text-white">{title}</h2>
-          <p className="mb-6 text-gray-300">{message}</p>
-          <div className="flex justify-end gap-3">
-            <button
-              onClick={onClose}
-              className="rounded-md bg-gray-800 px-4 py-2 text-white transition-colors hover:bg-gray-700"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => {
-                onConfirm();
-                onClose();
-              }}
-              className="group relative inline-flex items-center justify-center overflow-hidden rounded-md bg-gradient-to-br from-blue-500 to-purple-600 p-0.5 text-sm font-medium text-white hover:text-white focus:outline-none focus:ring-4 focus:ring-blue-800"
-            >
-              <span className="relative rounded-md bg-[#020817] px-4 py-1.5 transition-all duration-300 ease-in-out group-hover:bg-opacity-0">
-                Confirm
-              </span>
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    )}
-  </AnimatePresence>
-);
-
-// Branding & Animated Background
-const BoothLogo = () => (
-  <svg
-    width="40"
-    height="40"
-    viewBox="0 0 40 40"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className="text-blue-500"
-  >
-    <motion.path
-      initial={{ pathLength: 0 }}
-      animate={{ pathLength: 1 }}
-      transition={{ duration: 1.5, ease: "easeInOut" }}
-      d="M8 8h24v24H8z"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      fill="none"
-    />
-    <motion.path
-      initial={{ pathLength: 0 }}
-      animate={{ pathLength: 1 }}
-      transition={{ duration: 1.5, ease: "easeInOut", delay: 0.3 }}
-      d="M12 16h16"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-    />
-    <motion.path
-      initial={{ pathLength: 0 }}
-      animate={{ pathLength: 1 }}
-      transition={{ duration: 1.5, ease: "easeInOut", delay: 0.6 }}
-      d="M12 22h16"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-    />
-    <motion.path
-      initial={{ pathLength: 0 }}
-      animate={{ pathLength: 1 }}
-      transition={{ duration: 1.5, ease: "easeInOut", delay: 0.9 }}
-      d="M12 28h16"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-    />
-  </svg>
-);
-
-const Blob = ({
-  className,
-  scale = 1,
-  animate = false,
-}: {
-  className: string;
-  scale?: number;
-  animate?: boolean;
-}) => (
-  <motion.div
-    initial={{ scale: 1, opacity: 0.3 }}
-    animate={
-      animate
-        ? {
-            scale: [scale, scale * 1.2, scale],
-            opacity: [0.3, 0.5, 0.3],
-          }
-        : {}
-    }
-    transition={{
-      duration: 2,
-      repeat: Infinity,
-      repeatType: "reverse",
-      ease: "easeInOut",
-    }}
-    className={`absolute h-64 w-64 rounded-full bg-gradient-to-r blur-3xl filter ${className}`}
-  />
-);
-
-const ControlButton = ({
-  icon: Icon,
-  onClick,
-}: {
-  icon: React.ElementType;
-  onClick: () => void;
-}) => (
-  <button
-    onClick={onClick}
-    className="group relative inline-flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-blue-500 to-purple-600 p-0.5 text-lg font-semibold text-white hover:text-white focus:outline-none focus:ring-4 focus:ring-blue-800"
-  >
-    <span className="relative flex h-full w-full items-center justify-center rounded-full bg-[#020817] transition-all duration-300 ease-in-out group-hover:bg-opacity-0">
-      <Icon className="h-6 w-6" />
-    </span>
-  </button>
-);
-
-// Add these interfaces before the HomePage component
-interface UploadResponse {
-  success: boolean;
-  error?: string;
-  results?: Array<{
-    filename: string;
-    analysis: string;
-  }>;
+interface WorkerJob {
+  jobId: string;
+  status: string;
+  data: WorkerJobData;
 }
 
-// Add this new component before the HomePage component
-const FileUploadSection = ({
-  files,
-  setFiles,
-  onUpload,
-}: {
-  files: FileList | null;
-  setFiles: (files: FileList | null) => void;
-  onUpload: () => void;
-}) => {
-  const [isDragging, setIsDragging] = useState(false);
+// Define the API types
+interface JobData {
+  processed: boolean;
+  data: string;
+}
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files) {
-      setFiles(e.dataTransfer.files);
-    }
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="mx-auto mb-8 w-full max-w-xl"
-    >
-      <div className="relative">
-        <div
-          className={`relative overflow-hidden rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-purple-600/10 backdrop-blur-sm transition-all duration-300 ${isDragging ? "border-blue-400 bg-blue-500/20" : ""} `}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <div className="p-8 text-center">
-            <motion.div
-              className="mb-4 flex justify-center"
-              animate={{
-                scale: isDragging ? 1.1 : 1,
-              }}
-              transition={{ duration: 0.2 }}
-            >
-              <svg
-                className="h-12 w-12 text-blue-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                />
-              </svg>
-            </motion.div>
-
-            <h3 className="mb-2 text-xl font-semibold text-blue-100">
-              Upload Your Medical Files
-            </h3>
-            <p className="mb-4 text-blue-200/80">
-              Drag and drop your scans or medical images here, or click to
-              browse
-            </p>
-
-            <input
-              type="file"
-              multiple
-              accept="image/*,.pdf,.dicom"
-              onChange={(e) => setFiles(e.target.files)}
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-            />
-
-            {files && files.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-4"
-              >
-                <div className="rounded-lg bg-blue-500/10 p-4 backdrop-blur-sm">
-                  <h4 className="mb-2 font-medium text-blue-100">
-                    Selected Files ({files.length})
-                  </h4>
-                  <ul className="text-left">
-                    {Array.from(files).map((file, index) => (
-                      <li
-                        key={index}
-                        className="mb-1 flex items-center gap-2 text-sm text-blue-200/80"
-                      >
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                          />
-                        </svg>
-                        {file.name}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <motion.button
-                  onClick={onUpload}
-                  className="group relative mt-4 inline-flex w-full items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 p-0.5 text-sm font-semibold text-white hover:text-white focus:outline-none focus:ring-4 focus:ring-blue-800"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <span className="relative w-full rounded-md bg-[#020817] px-6 py-2.5 transition-all duration-300 ease-in-out group-hover:bg-opacity-0">
-                    Upload & Analyze Files
-                  </span>
-                </motion.button>
-              </motion.div>
-            )}
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-// Update the SessionIdDisplay component
-const SessionIdDisplay = ({
-  sessionId,
-  isVisible,
-}: {
-  sessionId: string | null;
-  isVisible: boolean;
-}) => {
-  if (!sessionId || !isVisible) return null;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 20 }}
-      className="fixed bottom-4 left-4 z-50"
-    >
-      <motion.div
-        className="rounded-md border border-blue-500/20 bg-[#020817] px-3 py-1.5 text-sm font-medium text-blue-400 shadow-lg"
-        whileHover={{ scale: 1.05 }}
-      >
-        Session ID: {sessionId}
-      </motion.div>
-    </motion.div>
-  );
-};
+interface JobResult {
+  jobId: string;
+  status: JobState | "not_found";
+  data: JobData | null;
+}
 
 export default function HomePage() {
+  // ─────────────────────────────────────
+  // Local state and refs
+  // ─────────────────────────────────────
   const [isConsultationStarted, setIsConsultationStarted] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [files, setFiles] = useState<FileList | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [lastAnalysisTimestamp, setLastAnalysisTimestamp] = useState<string | null>(null);
+  const [workerIds, setWorkerIds] = useState<string[]>([]);
+  const [processedContents, setProcessedContents] = useState<
+    { id: string; content: string }[]
+  >([]);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const blobsRef = useRef<HTMLDivElement>(null);
-
-  // WebRTC and conversation hooks
-  const {
-    isConnected,
-    isLoading,
-    error: webRTCError,
-    isMuted,
-    connect,
-    disconnect,
-    toggleMic,
-    pauseSession,
-    resumeSession,
-  } = useWebRTC();
-
-  const {
-    state: { messages },
-  } = useConversation();
+  // ─────────────────────────────────────
+  // Hooks
+  // ─────────────────────────────────────
+  const { isConnected, isLoading, error: webRTCError, isMuted, connect, disconnect,
+          toggleMic, pauseSession, resumeSession, sendMessage } = useWebRTC();
 
   const { isSignedIn, isLoaded, userId } = useAuth();
   const router = useRouter();
@@ -379,55 +90,197 @@ export default function HomePage() {
   }, [isLoaded, isSignedIn, router]);
 
   // Use the kiosk session hook
-  const { startSession, clearSession, isCreatingSession, error, sessionId } =
+  const { startSession, clearSession, ensureSession, isCreatingSession, error, sessionId } =
     useKioskSession({
-      onSessionCreated: () => {
-        setIsConsultationStarted(true);
-      },
-      onError: () => {
-        setIsConsultationStarted(false);
-      },
+      onSessionCreated: () => setIsConsultationStarted(true),
+      onError: () => setIsConsultationStarted(false),
     });
 
-  // Handle starting consultation
-  const handleStartConsultation = async () => {
-    if (!userId) {
-      return;
+  // Conversation context
+  const {
+    state: { messages },
+  } = useConversation();
+
+  // Polling worker data
+  const { data: workerData, isLoading: isPollingLoading } = api.polling.polling.useQuery(
+    undefined,
+    {
+      refetchInterval: 2000,
+      refetchIntervalInBackground: true,
+      enabled: isConsultationStarted,
     }
+  );
+
+  // Analyze conversation
+  const analyzeMutation = api.reasoning_bots.analyzeConversation.useMutation({
+    onSuccess(data) {
+      if (data?.workerIds?.length) {
+        setWorkerIds((prev) => [...prev, ...data.workerIds]);
+      }
+    },
+  });
+
+  // Poll job statuses
+  const { data: jobStatuses } = api.reasoning_bots.pollJobStatus.useQuery(
+    { jobIds: workerIds },
+    {
+      enabled: workerIds.length > 0,
+      refetchInterval: 2000,
+    }
+  );
+
+  // ─────────────────────────────────────
+  // Refs
+  // ─────────────────────────────────────
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastAnalyzedMessageRef = useRef<{ timestamp: string; content: string } | null>(
+    null
+  );
+
+  // ─────────────────────────────────────
+  // Effects: Connection + Auto-Scroll
+  // ─────────────────────────────────────
+
+  // Auto-scroll when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Connect/disconnect on consultation start/end
+  useEffect(() => {
+    const handleConnection = async () => {
+      try {
+        if (isConsultationStarted && !isConnected && !isLoading) {
+          await connect();
+        } else if (!isConsultationStarted && isConnected) {
+          disconnect();
+        }
+      } catch (err) {
+        console.error("Connection error:", err);
+      }
+    };
+    void handleConnection();
+  }, [isConsultationStarted, isConnected, isLoading, connect, disconnect]);
+
+  // ─────────────────────────────────────
+  // Continuous Analysis Effect
+  // ─────────────────────────────────────
+  useEffect(() => {
+    const performContinuousAnalysis = async () => {
+      if (messages.length === 0) return;
+
+      const lastMessage = messages[messages.length - 1];
+
+      // Skip if:
+      //   1. Not a user message
+      //   2. Already analyzed it
+      //   3. It's a system/analysis result
+      if (
+        lastMessage?.role !== "user" ||
+        lastMessage.content.includes("[Background Analysis]") ||
+        (lastAnalyzedMessageRef.current?.timestamp === lastMessage.timestamp &&
+          lastAnalyzedMessageRef.current?.content === lastMessage.content)
+      ) {
+        return;
+      }
+
+      // Mark it to prevent re-analysis
+      lastAnalyzedMessageRef.current = {
+        timestamp: lastMessage.timestamp,
+        content: lastMessage.content,
+      };
+
+      // Filter out system messages
+      const conversationForAnalysis = messages
+        .filter((msg): msg is UserAssistantMessage =>
+          msg.role === "user" || msg.role === "assistant"
+        )
+        .map(({ role, content }) => ({ role, content }));
+
+      try {
+        const result = await analyzeMutation.mutateAsync(conversationForAnalysis);
+        if (result?.workerIds?.length) {
+          setWorkerIds((prev) => [...prev, ...result.workerIds]);
+        }
+      } catch (error) {
+        console.error("Analysis request failed:", error);
+      }
+    };
+
+    // Debounce if consultation is active & not paused
+    if (isConsultationStarted && !isPaused) {
+      const timeoutId = setTimeout(() => {
+        void performContinuousAnalysis();
+      }, 1000);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [messages, isConsultationStarted, isPaused, analyzeMutation]);
+
+  // ─────────────────────────────────────
+  // Effects: Handle completed jobs
+  // ─────────────────────────────────────
+  useEffect(() => {
+    if (!jobStatuses) return;
+
+    // Completed jobs
+    const completedJobs = jobStatuses.filter((js): js is JobResult => {
+      if (js.status !== "completed" || !js.data) return false;
+      const jobData = js.data as JobData;
+      return jobData.processed === true && typeof jobData.data === "string";
+    }).map(job => ({
+      ...job,
+      data: job.data as JobData // We know this is safe due to the filter above
+    }));
+
+    if (completedJobs.length > 0) {
+      completedJobs.forEach((job) => {
+        const analysisData = job.data.data;
+        
+        // Timestamp
+        const currentTimestamp = new Date().toISOString();
+        setLastAnalysisTimestamp(currentTimestamp);
+
+        // // Show toast
+        // setProcessedContents((prev) => [
+        //   ...prev,
+        //   {
+        //     id: job.jobId,
+        //     content: analysisData,
+        //   },
+        // ]);
+
+        // Send the analysis message into conversation
+        sendMessage({
+          type: "response.create",
+          response: {
+            modalities: ["text"],
+            instructions: `[Background Analysis] ${analysisData}`,
+          },
+        });
+      });
+
+      // Remove completed job IDs from workerIds
+      setWorkerIds((prev) =>
+        prev.filter((id) => !completedJobs.find((job) => job.jobId === id))
+      );
+    }
+  }, [jobStatuses, sendMessage]);
+
+  // ─────────────────────────────────────
+  // Event Handlers
+  // ─────────────────────────────────────
+
+  const handleStartConsultation = async () => {
+    if (!userId) return;
     await startSession(userId);
   };
 
-  // Handle ending consultation
   const handleEndConsultation = () => {
     setIsConsultationStarted(false);
     clearSession();
     disconnect();
   };
 
-  // Auto-scroll to bottom when messages update
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // Auto connect/disconnect when consultation starts/ends
-  useEffect(() => {
-    const handleConnection = async () => {
-      try {
-        if (isConsultationStarted && !isConnected && !isLoading) {
-          await connect();
-        }
-        if (!isConsultationStarted && isConnected) {
-          await disconnect();
-        }
-      } catch (err) {
-        console.error("Connection error:", err);
-      }
-    };
-
-    void handleConnection();
-  }, [isConsultationStarted, isConnected, isLoading, connect, disconnect]);
-
-  // Toggle pause/resume for the session
   const handleTogglePause = async () => {
     try {
       if (!isPaused) {
@@ -442,113 +295,177 @@ export default function HomePage() {
     }
   };
 
-  // Blob color style logic
-  const blobStyle = isPaused
-    ? {
-        blob1: "from-yellow-500/30 to-orange-500/30",
-        blob2:
-          "translate-x-[25%] translate-y-[25%] from-yellow-500/30 to-orange-500/30",
-        blob3:
-          "-translate-x-[25%] -translate-y-[25%] from-yellow-500/30 to-orange-500/30",
-      }
-    : isMuted
-      ? {
-          blob1: "from-gray-500/30 to-gray-700/30",
-          blob2:
-            "translate-x-[25%] translate-y-[25%] from-gray-500/30 to-gray-700/30",
-          blob3:
-            "-translate-x-[25%] -translate-y-[25%] from-gray-500/30 to-gray-700/30",
-        }
-      : {
-          blob1: "from-blue-500/30 to-purple-500/30",
-          blob2:
-            "translate-x-[25%] translate-y-[25%] from-indigo-500/30 to-cyan-500/30",
-          blob3:
-            "-translate-x-[25%] -translate-y-[25%] from-violet-500/30 to-blue-500/30",
-        };
-
-  // If auth is still loading or user isn't signed in, don't render the page content
-  if (!isLoaded || !isSignedIn) {
-    return (
-      <main className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold text-blue-500">Loading...</h2>
-        </div>
-      </main>
-    );
-  }
   // Handle file upload
-  const handleUploadFiles = async () => {
+  const handleUploadFiles = async (uploadFiles: FileList) => {
     try {
-      if (!files || files.length === 0) {
-        alert("Please select at least one file first.");
+      console.log("Uploading files:", uploadFiles);
+      if (uploadFiles.length === 0) return;
+      
+      if (!userId) {
+        setUploadError("Please sign in to upload files");
         return;
       }
-      const formData = new FormData();
 
-      // Use for...of loop for better iteration
-      for (const file of Array.from(files)) {
+      setIsUploading(true);
+      setUploadError(null);
+
+      // Ensure we have a session
+      let currentSessionId: string;
+      try {
+        currentSessionId = await ensureSession(userId);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : "Failed to create session";
+        setUploadError(errMsg);
+        setIsUploading(false);
+        return;
+      }
+      
+      const formData = new FormData();
+      for (const file of Array.from(uploadFiles)) {
         formData.append("files", file);
       }
 
-      const sessionId = "FAKE-SESSION-ID-PRE-CONSULT";
-      const response = await fetch(`/api/upload?sessionId=${sessionId}`, {
+      const response = await fetch(`/api/upload?sessionId=${currentSessionId}`, {
         method: "POST",
         body: formData,
       });
 
-      const result = (await response.json()) as UploadResponse;
+      const result = await response.json() as {
+        success: boolean;
+        error?: string;
+        results?: Array<{
+          filename: string;
+          analysis: string;
+        }>;
+      };
+
+      console.log("Result:", result);
 
       if (!result.success) {
-        throw new Error(result.error ?? "Unknown error");
+        throw new Error(result.error ?? "Failed to upload and analyze files");
       }
 
-      console.log("Uploaded and analyzed files:", result.results);
-      alert(
-        "Files uploaded and analyzed successfully! Check the console for details.",
-      );
+      // If we have analysis results, send them to the conversation
+      if (result.results?.length) {
+        result.results.forEach(({ filename, analysis }) => {
+          sendMessage({
+            type: "response.create",
+            response: {
+              modalities: ["text"],
+              instructions: `[File Analysis] ${filename}: ${analysis}`,
+            },
+          });
+        });
+      }
+
       setFiles(null);
     } catch (error) {
-      console.error(
-        "Upload error:",
-        error instanceof Error ? error.message : "Unknown error",
-      );
-      alert("Failed to upload/analyze files. Check console for error details.");
+      console.error("Upload error:", error);
+      setUploadError(error instanceof Error ? error.message : "Failed to upload files");
+    } finally {
+      setIsUploading(false);
     }
   };
 
+  // ─────────────────────────────────────
+  // Animated background color logic
+  // ─────────────────────────────────────
+  const blobStyle = isPaused
+    ? {
+        blob1: "left-[20%] top-[30%] from-yellow-500/30 to-orange-500/30",
+        blob2: "left-[80%] top-[70%] from-yellow-500/30 to-orange-500/30",
+        blob3: "left-[70%] top-[20%] from-yellow-500/30 to-orange-500/30",
+        blob4: "left-[30%] top-[80%] from-amber-500/30 to-yellow-500/30",
+        blob5: "left-[85%] top-[40%] from-orange-500/30 to-red-500/30",
+        blob6: "left-[40%] top-[50%] from-yellow-600/20 to-amber-400/20",
+      }
+    : isMuted
+    ? {
+        blob1: "left-[20%] top-[30%] from-gray-500/30 to-gray-700/30",
+        blob2: "left-[80%] top-[70%] from-gray-500/30 to-gray-700/30",
+        blob3: "left-[70%] top-[20%] from-gray-500/30 to-gray-700/30",
+        blob4: "left-[30%] top-[80%] from-gray-600/30 to-gray-800/30",
+        blob5: "left-[85%] top-[40%] from-gray-400/30 to-gray-600/30",
+        blob6: "left-[40%] top-[50%] from-gray-500/20 to-gray-700/20",
+      }
+    : {
+        blob1: "left-[20%] top-[30%] from-blue-500/30 to-purple-500/30",
+        blob2: "left-[80%] top-[70%] from-indigo-500/30 to-cyan-500/30",
+        blob3: "left-[70%] top-[20%] from-violet-500/30 to-blue-500/30",
+        blob4: "left-[30%] top-[80%] from-cyan-400/30 to-teal-500/30",
+        blob5: "left-[85%] top-[40%] from-fuchsia-500/30 to-pink-500/30",
+        blob6: "left-[40%] top-[50%] from-blue-600/20 to-indigo-400/20",
+      };
+
+  // ─────────────────────────────────────
+  // If Auth is not loaded or user not signed in, return null
+  // ─────────────────────────────────────
+  if (!isLoaded || !isSignedIn) {
+    return null;
+  }
+
+  // ─────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────
   return (
     <main className="relative flex min-h-screen flex-col items-center overflow-hidden">
-      {/* Show error message if there is one */}
+      {/* Error message if kiosk session has an error */}
       {error && (
         <div className="absolute left-1/2 top-4 z-50 -translate-x-1/2 transform rounded-lg bg-red-500/90 px-4 py-2 text-white">
           {error}
         </div>
       )}
 
-      {/* Animated Blobs Background */}
-      <div
-        ref={blobsRef}
-        className="pointer-events-none absolute inset-0 flex items-center justify-center"
-      >
-        <Blob
-          className={blobStyle.blob1}
-          scale={isLoading ? 1.2 : 1}
-          animate={isLoading || isPaused || isMuted}
-        />
-        <Blob
-          className={blobStyle.blob2}
-          scale={isLoading ? 1.3 : 1}
-          animate={isLoading || isPaused || isMuted}
-        />
-        <Blob
-          className={blobStyle.blob3}
-          scale={isLoading ? 1.1 : 1}
-          animate={isLoading || isPaused || isMuted}
-        />
+      {/* Worker & Analysis Status (top-right corner) */}
+      {isConsultationStarted && (
+        <div className="absolute right-4 top-4 z-50 space-y-4">
+          <WorkerStatus isPollingLoading={isPollingLoading} />
+        </div>
+      )}
+
+      {/* Animated Blob Background */}
+      <div className="pointer-events-none fixed inset-0 h-screen w-screen overflow-hidden">
+        <motion.div 
+          className="absolute inset-0"
+          initial={false}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <Blob
+            className={`absolute ${blobStyle.blob1} z-10`}
+            scale={1}
+            animate={true}
+          />
+          <Blob
+            className={`absolute ${blobStyle.blob2} z-20`}
+            scale={1.1}
+            animate={true}
+          />
+          <Blob
+            className={`absolute ${blobStyle.blob3} z-30`}
+            scale={0.9}
+            animate={true}
+          />
+          <Blob
+            className={`absolute ${blobStyle.blob4} z-10`}
+            scale={1.2}
+            animate={true}
+          />
+          <Blob
+            className={`absolute ${blobStyle.blob5} z-20`}
+            scale={1}
+            animate={true}
+          />
+          <Blob
+            className={`absolute ${blobStyle.blob6} z-30`}
+            scale={1.3}
+            animate={true}
+          />
+        </motion.div>
       </div>
 
-      {/* Welcome / Landing View */}
+      {/* Landing / Welcome View */}
       <AnimatePresence mode="wait">
         {!isConsultationStarted && (
           <motion.div
@@ -574,12 +491,30 @@ export default function HomePage() {
                 Your personal health consultation companion
               </motion.p>
 
-              {/* Replace the existing Add Files Section with the new component */}
-              <FileUploadSection
-                files={files}
-                setFiles={setFiles}
-                onUpload={handleUploadFiles}
+              {/* File Upload Section */}
+              <FileUploadSection 
+                files={files} 
+                setFiles={setFiles} 
+                onUpload={handleUploadFiles} 
               />
+              {isUploading && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="mt-4 text-blue-200"
+                >
+                  Uploading and analyzing files...
+                </motion.p>
+              )}
+              {uploadError && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="mt-4 text-red-400"
+                >
+                  {uploadError}
+                </motion.p>
+              )}
 
               <motion.button
                 onClick={handleStartConsultation}
@@ -597,13 +532,10 @@ export default function HomePage() {
 
       {/* Session ID Display */}
       <AnimatePresence>
-        <SessionIdDisplay
-          sessionId={sessionId}
-          isVisible={isConsultationStarted}
-        />
+        <SessionIdDisplay sessionId={sessionId} isVisible={isConsultationStarted} />
       </AnimatePresence>
 
-      {/* Consultation UI */}
+      {/* Main Consultation UI */}
       <AnimatePresence>
         {isConsultationStarted && (
           <motion.div
@@ -612,7 +544,7 @@ export default function HomePage() {
             exit={{ opacity: 0, y: -20 }}
             className="relative z-10 mx-auto flex h-full w-full max-w-4xl flex-col items-center p-4"
           >
-            {/* Consultation Header */}
+            {/* Header */}
             <div className="mb-4 flex items-center gap-3">
               <BoothLogo />
               <span className="text-xl font-semibold text-blue-500">
@@ -634,9 +566,7 @@ export default function HomePage() {
               }}
             >
               {isLoading ? (
-                <p className="text-lg text-blue-400">
-                  Establishing connection...
-                </p>
+                <p className="text-lg text-blue-400">Establishing connection...</p>
               ) : webRTCError ? (
                 <p className="text-lg text-red-400">{webRTCError}</p>
               ) : isConnected ? (
@@ -648,11 +578,11 @@ export default function HomePage() {
 
             {/* Messages Container */}
             <div className="w-full flex-1 overflow-y-auto">
-              {/* If you have messages to display, handle them here */}
+              {/* Render your messages here, e.g. map over messages */}
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Control Buttons - Only show when connected */}
+            {/* Control Buttons */}
             {isConnected && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -660,25 +590,16 @@ export default function HomePage() {
                 exit={{ opacity: 0, y: 20 }}
                 className="sticky bottom-8 mt-8 flex w-full justify-center gap-8"
               >
-                <ControlButton
-                  icon={isMuted ? MicOff : Mic}
-                  onClick={toggleMic}
-                />
-                <ControlButton
-                  icon={isPaused ? Play : Pause}
-                  onClick={handleTogglePause}
-                />
-                <ControlButton
-                  icon={X}
-                  onClick={() => setIsConfirmDialogOpen(true)}
-                />
+                <ControlButton icon={isMuted ? MicOff : Mic} onClick={toggleMic} />
+                <ControlButton icon={isPaused ? Play : Pause} onClick={handleTogglePause} />
+                <ControlButton icon={X} onClick={() => setIsConfirmDialogOpen(true)} />
               </motion.div>
             )}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Confirmation Dialog */}
+      {/* End Consultation Confirmation Dialog */}
       <ConfirmDialog
         isOpen={isConfirmDialogOpen}
         onClose={() => setIsConfirmDialogOpen(false)}
@@ -686,6 +607,21 @@ export default function HomePage() {
         title="End Consultation"
         message="Are you sure you want to end this consultation? This action cannot be undone."
       />
+
+      {/* Processed Content Toasts */}
+      <AnimatePresence>
+        <div className="fixed bottom-24 right-4 z-50 space-y-4">
+          {processedContents.map((content) => (
+            <ProcessedContentToast
+              key={content.id}
+              content={content}
+              onComplete={(id: string) =>
+                setProcessedContents((prev) => prev.filter((c) => c.id !== id))
+              }
+            />
+          ))}
+        </div>
+      </AnimatePresence>
     </main>
   );
 }
