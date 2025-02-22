@@ -3,10 +3,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { randomUUID } from "crypto";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import { db } from "~/server/db";
 import { env } from "~/env";
-import { uploadToS3 } from "~/server/utils/s3";
+import { uploadToS3, s3Client } from "~/server/utils/s3";
 import { convertPdfToImagesAndUpload } from "~/server/utils/pdfToImages";
 
 const openai = new OpenAI({
@@ -44,30 +46,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify the session exists
-    const session = await db.session.findUnique({
-      where: { id: sessionId },
-      select: { id: true, state: true }
-    });
+    // Check if this is a temporary session ID
+    const isTemporarySession = sessionId.startsWith('temp_');
+    
+    if (!isTemporarySession) {
+      // Only verify database session for non-temporary sessions
+      const session = await db.session.findUnique({
+        where: { id: sessionId },
+        select: { id: true, state: true }
+      });
 
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: "Invalid session ID" },
-        { status: 404 },
-      );
-    }
+      if (!session) {
+        return NextResponse.json(
+          { success: false, error: "Invalid session ID" },
+          { status: 404 },
+        );
+      }
 
-    if (session.state !== "IN_PROGRESS") {
-      return NextResponse.json(
-        { success: false, error: "Session is not in progress" },
-        { status: 400 },
-      );
+      if (session.state !== "IN_PROGRESS") {
+        return NextResponse.json(
+          { success: false, error: "Session is not in progress" },
+          { status: 400 },
+        );
+      }
     }
 
     const results: Array<{
       fileName: string;
       mediaId: string;
       analysis: string;
+      url: string;
+      presignedUrl: string;
     }> = [];
 
     // 2) Loop over each uploaded file
@@ -103,6 +112,18 @@ export async function POST(request: NextRequest) {
       //  We'll treat multi-page PDFs as multiple Media records:
       const insertedMedias = await Promise.all(
         finalStoredLocations.map(async (location) => {
+          if (isTemporarySession) {
+            // For temporary sessions, just return a mock media object
+            // This avoids database constraints while still allowing analysis
+            return {
+              id: randomUUID(),
+              sessionId,
+              mediaType: fileExt === "pdf" ? "image" : "image",
+              storageLocation: location,
+              capturedAt: new Date(),
+            };
+          }
+          
           return db.media.create({
             data: {
               sessionId,
@@ -117,13 +138,29 @@ export async function POST(request: NextRequest) {
       //     We'll combine all pages or images in one prompt for demonstration,
       //     but you can do them individually if you want separate analyses.
       //     Here we call GPT-4o or GPT-4 with image URLs:
+
+      // Generate pre-signed URLs for OpenAI to access
+      const getPresignedUrl = async (location: string) => {
+        const bucketName = "health-kiosk";
+        const key = location.replace(`https://${bucketName}.s3.eu-west-1.amazonaws.com/`, '');
+        const command = new GetObjectCommand({
+          Bucket: bucketName,
+          Key: key,
+        });
+        return await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+      };
+
+      const presignedUrls = await Promise.all(
+        finalStoredLocations.map(location => getPresignedUrl(location))
+      );
+
       const messages = [{
         role: "user" as const,
         content: [
           { type: "text" as const, text: "Please summarize what is in these images." },
-          ...finalStoredLocations.map(location => ({
+          ...presignedUrls.map(url => ({
             type: "image_url" as const,
-            image_url: { url: location }
+            image_url: { url }
           }))
         ]
       }];
@@ -142,18 +179,31 @@ export async function POST(request: NextRequest) {
         throw new Error("Failed to create media record");
       }
 
-      const visionAnalysis = await db.visionAnalysis.create({
-        data: {
+      let visionAnalysis;
+      if (isTemporarySession) {
+        // For temporary sessions, just create a mock analysis object
+        visionAnalysis = {
+          id: randomUUID(),
           mediaId: firstMedia.id,
           analysisType: fileExt === "pdf" ? "pdf-analysis" : "image-analysis",
           analysisResults: analysis,
-        },
-      });
+        };
+      } else {
+        visionAnalysis = await db.visionAnalysis.create({
+          data: {
+            mediaId: firstMedia.id,
+            analysisType: fileExt === "pdf" ? "pdf-analysis" : "image-analysis",
+            analysisResults: analysis,
+          },
+        });
+      }
 
       // 2e) For returning in the response, just attach the first Media's ID
       results.push({
         fileName: file.name,
         mediaId: firstMedia.id,
+        url: finalStoredLocations[0]!,
+        presignedUrl: presignedUrls[0]!,
         analysis: visionAnalysis.analysisResults ?? "No analysis available",
       });
     }
