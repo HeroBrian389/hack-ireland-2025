@@ -105,8 +105,6 @@ export default function HomePage() {
   const [insights, setInsights] = useState<Insight[]>([]);
   const [analyzedFiles, setAnalyzedFiles] = useState<AnalyzedFile[]>([]);
   const [isAssistantSpeaking, setIsAssistantSpeaking] = useState(false);
-  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
-  const [showVision, setShowVision] = useState(true);
   const [summaryJobId, setSummaryJobId] = useState<string | null>(null);
   const [summaryMarkdown, setSummaryMarkdown] = useState<string | null>(null);
   const [isCheckingSummary, setIsCheckingSummary] = useState(false);
@@ -307,7 +305,7 @@ export default function HomePage() {
       })
       .map((job) => ({
         ...job,
-        data: job.data as JobData,
+        data: job.data!
       }));
 
     if (completedJobs.length > 0) {
@@ -644,11 +642,21 @@ export default function HomePage() {
 
       {/* Worker & Analysis Status (top-right corner) */}
       {isConsultationStarted && (
-        <div className="absolute right-4 top-20 z-50 w-64 space-y-4">
-          <WorkerDataDisplay
-            workerData={workerData}
-            jobStatuses={jobStatuses}
-            isPollingLoading={isPollingLoading}
+        <div className="absolute right-4 w-64 top-20 z-50 space-y-4">
+          <WorkerDataDisplay 
+            workerData={workerData?.map(worker => ({
+              id: worker.id!,
+              data: worker.data
+            }))} 
+            jobStatuses={jobStatuses?.map(status => ({
+              jobId: status.jobId,
+              status: status.status,
+              data: status.data ? {
+                processed: true,
+                data: Array.isArray(status.data) ? status.data : undefined
+              } : null
+            }))} 
+            isPollingLoading={isPollingLoading} 
           />
         </div>
       )}
