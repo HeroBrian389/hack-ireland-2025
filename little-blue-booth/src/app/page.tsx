@@ -74,6 +74,19 @@ interface Insight {
   timestamp: string;
 }
 
+// Add these types near the top of the file with other interfaces
+interface GenerateSummaryResponse {
+  success: boolean;
+  error?: string;
+  jobId: string;
+}
+
+interface PollSummaryResponse {
+  status: "pending" | "completed" | "failed" | "not_found";
+  summaryContent?: string;
+  error?: string;
+}
+
 export default function HomePage() {
   // ─────────────────────────────────────
   // Local state and refs
@@ -91,6 +104,9 @@ export default function HomePage() {
   const [isAssistantSpeaking, setIsAssistantSpeaking] = useState(false);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [showVision, setShowVision] = useState(true);
+  const [summaryJobId, setSummaryJobId] = useState<string | null>(null);
+  const [summaryMarkdown, setSummaryMarkdown] = useState<string | null>(null);
+  const [isCheckingSummary, setIsCheckingSummary] = useState(false);
 
   // ─────────────────────────────────────
   // Hooks
@@ -289,6 +305,67 @@ export default function HomePage() {
       );
     }
   }, [jobStatuses, sendMessage]);
+
+  // ─────────────────────────────────────
+  // Summary Generation
+  // ─────────────────────────────────────
+  const handleGenerateSummary = async () => {
+    if (!sessionId) return;
+    try {
+      setIsCheckingSummary(true);
+
+      // Filter out system messages and format conversation
+      const conversationForSummary = messages
+        .filter((msg): msg is UserAssistantMessage => 
+          msg.role === "user" || msg.role === "assistant"
+        )
+        .map(({ role, content }) => ({ role, content }));
+
+      // 1) Call the route to spawn the job
+      const res = await fetch("/api/generate-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation: conversationForSummary }),
+      });
+      const data = (await res.json()) as GenerateSummaryResponse;
+      if (!data.success) {
+        throw new Error(data.error ?? "Failed to start summary job");
+      }
+
+      setSummaryJobId(data.jobId);
+
+      // 2) Poll for job completion
+      let polling = true;
+      let attempts = 0;
+      while (polling && attempts < 30) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const pollRes = await fetch("/api/generate-summary/poll", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId: data.jobId }),
+        });
+        const pollData = (await pollRes.json()) as PollSummaryResponse;
+        if (pollData.status === "completed" && pollData.summaryContent) {
+          setSummaryMarkdown(pollData.summaryContent);
+          polling = false;
+        } else if (pollData.status === "failed" || pollData.status === "not_found") {
+          throw new Error(pollData.error ?? "Summary job failed or not found");
+        }
+        attempts++;
+      }
+    } catch (err) {
+      console.error("Error generating summary:", err);
+    } finally {
+      setIsCheckingSummary(false);
+    }
+  };
+
+  // Add effect to handle summary navigation
+  useEffect(() => {
+    if (summaryMarkdown) {
+      router.push(`/end?summary=${encodeURIComponent(summaryMarkdown)}`);
+    }
+  }, [summaryMarkdown, router]);
 
   // ─────────────────────────────────────
   // Event Handlers
@@ -712,9 +789,9 @@ export default function HomePage() {
               <ControlButton icon={X} onClick={() => setIsConfirmDialogOpen(true)} />
               <ControlButton 
                 icon={Check} 
-                onClick={handleFinishConsultation}
-                disabled={isGeneratingSummary}
-                className={isGeneratingSummary ? "opacity-50" : ""}
+                onClick={handleGenerateSummary}
+                disabled={isCheckingSummary}
+                className={isCheckingSummary ? "opacity-50" : ""}
               />
             </motion.div>
           </>
@@ -747,61 +824,19 @@ export default function HomePage() {
           />
         )}
       </AnimatePresence>
+
+      {isConsultationStarted && (
+        <div className="fixed bottom-24 right-8 z-50">
+          <button
+            onClick={handleGenerateSummary}
+            disabled={isCheckingSummary}
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+          >
+            <Check className="h-4 w-4" />
+            {isCheckingSummary ? "Generating..." : "Check Summary"}
+          </button>
+        </div>
+      )}
     </main>
   );
 }
-
-// Move the function before the return statement, after all the hooks and effects
-const handleFinishConsultation = async () => {
-  try {
-    setIsGeneratingSummary(true);
-    
-    // Generate summary from conversation
-    const conversationForSummary = messages.map(({ role, content }: { role: string; content: string }) => ({
-      role,
-      content: content.trim(),
-    }));
-
-    // Add analyzed files to the summary context
-    if (analyzedFiles.length > 0) {
-      conversationForSummary.push({
-        role: "system",
-        content: "Analyzed Files:\n" + analyzedFiles.map(file => 
-          `${file.filename}: ${file.analysis}`
-        ).join("\n"),
-      });
-    }
-
-    // Add insights to the summary context
-    if (insights.length > 0) {
-      conversationForSummary.push({
-        role: "system",
-        content: "Key Insights:\n" + insights.map(insight => 
-          insight.content
-        ).join("\n"),
-      });
-    }
-
-    // Call the API to generate summary
-    const response = await fetch("/api/generate-summary", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conversation: conversationForSummary }),
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to generate summary");
-    }
-
-    const { summary } = await response.json();
-    
-    // Disconnect WebRTC
-    disconnect();
-    
-    // Redirect to end page with summary
-    router.push(`/end?summary=${encodeURIComponent(summary)}`);
-  } catch (error) {
-    console.error("Error generating summary:", error);
-    setIsGeneratingSummary(false);
-  }
-};
