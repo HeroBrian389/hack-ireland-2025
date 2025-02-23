@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { api } from "~/trpc/react";
 
 export interface Message {
+  id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
@@ -35,7 +36,8 @@ const conversationReducer = (state: ConversationState, action: ConversationActio
         ...state,
         messages: [...state.messages, action.payload]
       };
-      console.log('[ConversationContext] State updated:', newState.messages);
+      console.log('[ConversationContext] Reducer - New message added:', action.payload);
+      console.log('[ConversationContext] Reducer - Full messages array:', newState.messages);
       return newState;
     case 'CLEAR_MESSAGES':
       return {
@@ -66,13 +68,27 @@ export const ConversationProvider = ({ children }: { children: ReactNode }) => {
   const addMessage = (role: Message['role'], content: string) => {
     console.log('[ConversationContext] Adding message:', { role, content });
     const timestamp = new Date().toISOString();
-    const message: Message = { role, content, timestamp };
+    const message: Message = { 
+      id: uuidv4(),
+      role, 
+      content, 
+      timestamp 
+    };
+    
+    console.log('[ConversationContext] Created message with full details:', message);
     
     // Add message to local state
     dispatch({
       type: 'ADD_MESSAGE',
       payload: message
     });
+
+    // Log the current messages array after update
+    console.log('[ConversationContext] All messages after update:', state.messages.map(msg => ({
+      id: msg.id,
+      role: msg.role,
+      timestamp: msg.timestamp
+    })));
 
     // Save the message to the backend
     try {
