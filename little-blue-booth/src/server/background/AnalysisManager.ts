@@ -30,25 +30,23 @@ export async function createJobsFromConversation(
 
   try {
     for (const analysisModule of analysisModules) {
+      console.log(`Attempting to add job for module ${analysisModule.name} with jobId: ${analysisModule.name}-${sessionId}-${uuidv4()}`);
       const job = await myQueue.add(
         analysisModule.name,
         {
           conversation: conversationText,
           sessionId,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         },
         {
           priority: analysisModule.priority,
-          jobId: `${analysisModule.name}-${sessionId}`, // Unique job ID
+          jobId: `${analysisModule.name}-${sessionId}-${uuidv4()}`,
           attempts: 3,
-          backoff: {
-            type: 'exponential',
-            delay: 1000
-          }
+          backoff: { type: 'exponential', delay: 1000 },
         }
       );
 
-      if (job.id) {
+      if (job?.id) {
         jobIds.push(job.id);
         console.log(`Created job ${job.id} for module ${analysisModule.name}`);
       } else {
