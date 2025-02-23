@@ -387,6 +387,9 @@ export default function HomePage() {
         if (res.isHeartAttack === true) {
           router.push('http://localhost:3000/emergency_number');
         }
+        else {
+          router.push('http://localhost:3000/end?summary=' + encodeURIComponent(data.summary));
+        }
       };
       checkHeartCondition();
       
