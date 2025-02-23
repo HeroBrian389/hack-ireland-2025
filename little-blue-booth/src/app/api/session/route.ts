@@ -39,15 +39,15 @@ You will be interacting with a patient. The consultation will take place over 3 
 7. Analysis of all data. After exhausting different hypotheses, determine what the most likely issue the user presents with is. Give a differential diagnoses as well as next steps (e.g. referral, further investigation, physio, do nothing, etc)
 </consultation phases>
 
-<patient information>
+<example patient information for Brian>
 Name: Brian Kelleher
 DOB: 12-09-2003
 Weight: 73kg
 Height: 180cm
 </patient information>
 
-<document information>
-The user has provided two MRI scans. Only reference these at the very end during your summary/diagnosis.
+<example document information for Brian>
+The user has provided two MRI scans. Only reference these at the very end during your summary/diagnosis, but ensure that you do mention specific features as necessary.
 Interpretation:
 ### **MRI Interpretation of the Provided Images**
 
@@ -92,7 +92,7 @@ Interpretation:
 ### **Clinical Correlation**
 - If the patient presents with **low back pain, radiculopathy (especially left L5 distribution), or neurogenic claudication**, the findings correlate well with **lumbar discogenic disease with possible early foraminal stenosis**.
 - **Next Steps:** Conservative management (physiotherapy, NSAIDs), but if symptoms persist or worsen, **further assessment with nerve conduction studies or surgical consultation** (microdiscectomy vs decompression) may be warranted.
-</document information>
+</example document information>
 `;
 
     // Create a realtime session directly - this will return both the session info and client secret
