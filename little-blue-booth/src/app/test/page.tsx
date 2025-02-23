@@ -16,7 +16,10 @@ export default function TestPage() {
           text: "Patient is experiencing severe chest pain radiating to left arm, shortness of breath, and cold sweats for the last 30 minutes."
         })
       });
-      console.log(response);
+      const data = await response.json();
+      if (data.isHeartAttack === true) {
+        router.push('http://localhost:3000/emergency_number');
+      }
     };
 
     checkHeartCondition();

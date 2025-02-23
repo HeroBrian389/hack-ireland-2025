@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     }
 
     const parsedResponse = JSON.parse(response);
-
+    console.log(parsedResponse);
     return NextResponse.json(parsedResponse);
 
   } catch (error) {
