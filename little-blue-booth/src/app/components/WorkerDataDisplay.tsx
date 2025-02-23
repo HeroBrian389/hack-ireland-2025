@@ -82,7 +82,7 @@ export const WorkerDataDisplay: React.FC<WorkerDataDisplayProps> = ({
   useEffect(() => {
     // Update metrics whenever new worker data comes in
     if (workerData) {
-      const healthMetricsJobs = workerData.filter(worker => 
+      const healthMetricsJobs = workerData.filter(worker =>
         worker.id.startsWith('extractHealthMetrics-') && worker.data.processed
       );
 
@@ -93,7 +93,7 @@ export const WorkerDataDisplay: React.FC<WorkerDataDisplayProps> = ({
               const parsedData = JSON.parse(metric.data) as MetricData;
               setMetrics(prev => {
                 const newMetrics = { ...prev };
-                
+
                 switch (metric.markerType) {
                   case 'name':
                     if (typeof parsedData.value === 'string') newMetrics.name = parsedData.value;
@@ -138,15 +138,17 @@ export const WorkerDataDisplay: React.FC<WorkerDataDisplayProps> = ({
   }, [workerData]);
 
   return (
-    <motion.div 
+    <motion.div
       className="flex flex-col gap-4 rounded-lg border border-blue-500/20 bg-[#020817] p-4"
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
-      <div className="flex items-center gap-2">
-        <div className={`h-2 w-2 rounded-full ${isPollingLoading ? 'bg-blue-400 animate-pulse' : 'bg-gray-400'}`} />
-        <h3 className="text-sm font-semibold text-blue-400">Health Metrics</h3>
+      <div className="flex gap-2 flex-col">
+        <div className="flex items-center gap-2 w-full">
+          <div className={`h-2 w-2 rounded-full ${isPollingLoading ? 'bg-blue-400 animate-pulse' : 'bg-gray-400'}`} />
+          <h3 className="text-sm font-semibold text-blue-400">Health Metrics</h3>
+        </div>
         {metrics.lastUpdated && (
           <span className="text-xs text-gray-400">
             Last updated: {metrics.lastUpdated.toLocaleTimeString()}
@@ -161,7 +163,7 @@ export const WorkerDataDisplay: React.FC<WorkerDataDisplayProps> = ({
             <div className="text-lg font-semibold text-blue-300">{metrics.name}</div>
           </div>
         )}
-        
+
         {metrics.dob && (
           <div className="rounded border border-blue-500/10 bg-blue-500/5 p-3">
             <span className="text-xs text-gray-400">Date of Birth</span>
@@ -177,28 +179,28 @@ export const WorkerDataDisplay: React.FC<WorkerDataDisplayProps> = ({
             <div className="text-lg font-semibold text-blue-300">{metrics.bmi.toFixed(1)}</div>
           </div>
         )}
-        
+
         {metrics.height !== null && (
           <div className="rounded border border-blue-500/10 bg-blue-500/5 p-3">
             <span className="text-xs text-gray-400">Height</span>
             <div className="text-lg font-semibold text-blue-300">{metrics.height} cm</div>
           </div>
         )}
-        
+
         {metrics.weight !== null && (
           <div className="rounded border border-blue-500/10 bg-blue-500/5 p-3">
             <span className="text-xs text-gray-400">Weight</span>
             <div className="text-lg font-semibold text-blue-300">{metrics.weight} kg</div>
           </div>
         )}
-        
+
         {metrics.heartRate !== null && (
           <div className="rounded border border-blue-500/10 bg-blue-500/5 p-3">
             <span className="text-xs text-gray-400">Heart Rate</span>
             <div className="text-lg font-semibold text-blue-300">{metrics.heartRate} bpm</div>
           </div>
         )}
-        
+
         {metrics.bloodPressure?.systolic !== null && metrics.bloodPressure?.diastolic !== null && (
           <div className="rounded border border-blue-500/10 bg-blue-500/5 p-3">
             <span className="text-xs text-gray-400">Blood Pressure</span>
@@ -207,7 +209,7 @@ export const WorkerDataDisplay: React.FC<WorkerDataDisplayProps> = ({
             </div>
           </div>
         )}
-        
+
         {metrics.bloodOxygen !== null && (
           <div className="rounded border border-blue-500/10 bg-blue-500/5 p-3">
             <span className="text-xs text-gray-400">Blood Oxygen</span>
@@ -216,12 +218,12 @@ export const WorkerDataDisplay: React.FC<WorkerDataDisplayProps> = ({
         )}
       </div>
 
-      {Object.values(metrics).every(value => 
-        value === null || 
+      {Object.values(metrics).every(value =>
+        value === null ||
         (typeof value === 'object' && value !== null && Object.values(value as Record<string, unknown>).every(v => v === null))
       ) && (
-        <p className="text-xs text-gray-500">No health metrics available</p>
-      )}
+          <p className="text-xs text-gray-500">No health metrics available</p>
+        )}
     </motion.div>
   );
 }; 
