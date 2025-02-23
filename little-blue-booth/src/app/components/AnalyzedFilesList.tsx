@@ -1,3 +1,5 @@
+"use client";
+
 import { motion, AnimatePresence } from "framer-motion";
 import { FileText } from "lucide-react";
 import { useState, useCallback, useRef } from "react";

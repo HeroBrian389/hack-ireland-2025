@@ -112,13 +112,13 @@ export default function VideoRecorder({ sendMessage }: { sendMessage: (message: 
 
             if (data.success && data.description.content) {
                 // Send analysis through realtime API
-                sendMessage({
-                    type: "response.create",
-                    response: {
-                        modalities: ["text"],
-                        instructions: `[Vision Analysis] ${data.description.content}`,
-                    },
-                });
+                // sendMessage({
+                //     type: "response.create",
+                //     response: {
+                //         modalities: ["text"],
+                //         instructions: `[Vision Analysis] ${data.description.content}`,
+                //     },
+                // });
                 console.log("Analysis sent through realtime API");
             }
         } catch (err) {

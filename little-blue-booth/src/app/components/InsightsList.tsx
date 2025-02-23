@@ -1,3 +1,5 @@
+"use client"
+
 import { motion, AnimatePresence } from "framer-motion";
 import { Lightbulb } from "lucide-react";
 import { useState } from "react";

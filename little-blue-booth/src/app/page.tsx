@@ -88,7 +88,9 @@ interface PollSummaryResponse {
   error?: string;
 }
 
-export default function HomePage() {
+import { type FC } from "react";
+
+const HomeContent: FC = () => {
   // ─────────────────────────────────────
   // Local state and refs
   // ─────────────────────────────────────
@@ -621,16 +623,10 @@ export default function HomePage() {
           blob6: "left-[40%] top-[50%] from-blue-600/20 to-indigo-400/20",
         };
 
-  // ─────────────────────────────────────
-  // If Auth is not loaded or user not signed in, return null
-  // ─────────────────────────────────────
   if (!isLoaded || !isSignedIn) {
     return null;
   }
 
-  // ─────────────────────────────────────
-  // Render
-  // ─────────────────────────────────────
   return (
     <main className="relative flex min-h-screen flex-col items-center overflow-hidden">
       {/* Error message if kiosk session has an error */}
@@ -913,4 +909,9 @@ export default function HomePage() {
       </AnimatePresence>
     </main>
   );
+};
+
+// Make the main page component a server component
+export default function HomePage() {
+  return <HomeContent />;
 }

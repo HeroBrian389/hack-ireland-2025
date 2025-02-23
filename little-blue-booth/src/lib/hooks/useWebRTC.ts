@@ -167,26 +167,6 @@ export const useWebRTC = (): WebRTCHook => {
 
       dc.onopen = () => {
         setWebRTCState((prev) => ({ ...prev, isConnected: true }));
-        // Configure the available tools when connection is established
-        sendMessage({
-          type: "session.update",
-          session: {
-            tools: [
-              {
-                type: "function",
-                name: "medical_reasoning",
-                description:
-                  "Analyze the conversation for medical insights and provide medical reasoning.",
-                parameters: {
-                  type: "object",
-                  properties: {},
-                  required: [],
-                },
-              },
-            ],
-            tool_choice: "auto",
-          },
-        });
       };
 
       dc.onmessage = (e: MessageEvent<string>) => {
@@ -336,7 +316,7 @@ export const useWebRTC = (): WebRTCHook => {
 
           // D) error
           case "error":
-            console.error("[WebRTC] event.error:", event.error);
+            console.debug("[WebRTC] event.error:", event.error);
             addMessage("system", `Error: ${event.error ?? "Unknown error"}`);
             break;
         }
