@@ -27,12 +27,6 @@ export async function POST(request: NextRequest) {
         const arrayBuffer = await file.arrayBuffer();
         const data = Buffer.from(arrayBuffer).toString("base64");
 
-        console.log("Received file:", {
-            name: (file as File).name,
-            type: (file as File).type,
-            size: (file as File).size + " bytes",
-        });
-
 
         const response = await openai.chat.completions.create({
             model: "gpt-4o-mini",
@@ -52,9 +46,6 @@ export async function POST(request: NextRequest) {
             ],
             store: true,
         });
-
-        console.log(response.choices[0]);
-
 
         // 5️⃣ Return the response (for debugging)
         return NextResponse.json({
