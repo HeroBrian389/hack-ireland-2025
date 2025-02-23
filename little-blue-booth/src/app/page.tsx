@@ -32,6 +32,7 @@ import type { JobState } from "bullmq";
 import { PulsingBlob } from "~/app/components/PulsingBlob";
 import type { WebRTCEvent } from "~/lib/hooks/useWebRTC";
 import VideoRecorder from "~/app/components/VideoRecorder";
+import { RhythmicBlobs } from "~/app/components/RhythmicBlobs";
 
 // ────────────────────────────
 //  Types (adjust paths as needed)
@@ -76,7 +77,7 @@ interface Insight {
 
 // Add these types near the top of the file with other interfaces
 interface GenerateSummaryResponse {
-  success: boolean;
+  summary: string
   error?: string;
   jobId: string;
 }
@@ -328,7 +329,7 @@ export default function HomePage() {
         body: JSON.stringify({ conversation: conversationForSummary }),
       });
       const data = (await res.json()) as GenerateSummaryResponse;
-      if (!data.success) {
+      if (!data.summary) {
         throw new Error(data.error ?? "Failed to start summary job");
       }
 
@@ -712,14 +713,13 @@ export default function HomePage() {
               transition={{ duration: 0.6, ease: "easeInOut" }}
             >
               <motion.div
-                initial={{ y: "50vh", scale: 2, position: "fixed", left: "50%", x: "-50%" }}
-                animate={{ y: 0, scale: 1, position: "relative", left: "0%", x: "0%" }}
+                initial={{ y: "50vh", scale: 2 }}
+                animate={{ y: "2vh", scale: 1 }}
                 transition={{ 
                   duration: 1.2,
-                  ease: "easeInOut",
-                  position: { delay: 1 }
+                  ease: "easeInOut"
                 }}
-                className="flex items-center gap-3"
+                className="flex items-center gap-3 relative"
               >
                 <BoothLogo />
                 <span className="text-xl font-semibold text-blue-500">
@@ -730,11 +730,11 @@ export default function HomePage() {
 
             {/* Connection Status */}
             <motion.div
-              className="mb-8 text-center"
-              animate={{
-                scale: isLoading ? [1, 1.05, 1] : 1,
-                opacity: isLoading ? [0.5, 1, 0.5] : 1,
-              }}
+              className="mb-8 text-center bottom-0 fixed"
+              // animate={{
+              //   scale: isLoading ? [1, 1.05, 1] : 1,
+              //   opacity: isLoading ? [0.5, 1, 0.5] : 1,
+              // }}
               transition={{
                 duration: 2,
                 repeat: isLoading ? Infinity : 0,
@@ -762,7 +762,7 @@ export default function HomePage() {
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
-              className="w-full max-w-md mt-4 mx-auto"
+              className="w-full max-w-md mt-20 mx-auto"
             >
               <VideoRecorder sendMessage={sendMessage} />
             </motion.div>
@@ -778,11 +778,12 @@ export default function HomePage() {
               isVisible={isAssistantSpeaking} 
               className="fixed left-1/2 bottom-[30%] -translate-x-1/2 -translate-y-[70%]"
             />
+            <RhythmicBlobs isVisible={true} />
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 20 }}
-              className="fixed inset-x-0 top-2/3 z-50 mx-auto flex w-fit -translate-y-2/3 items-center justify-center gap-8"
+              className="fixed inset-x-0 top-[75%] z-50 mx-auto flex w-fit -translate-y-[75%] items-center justify-center gap-8"
             >
               <ControlButton icon={isMuted ? MicOff : Mic} onClick={toggleMic} />
               <ControlButton icon={isPaused ? Play : Pause} onClick={handleTogglePause} />
@@ -824,19 +825,6 @@ export default function HomePage() {
           />
         )}
       </AnimatePresence>
-
-      {isConsultationStarted && (
-        <div className="fixed bottom-24 right-8 z-50">
-          <button
-            onClick={handleGenerateSummary}
-            disabled={isCheckingSummary}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
-          >
-            <Check className="h-4 w-4" />
-            {isCheckingSummary ? "Generating..." : "Check Summary"}
-          </button>
-        </div>
-      )}
     </main>
   );
 }
