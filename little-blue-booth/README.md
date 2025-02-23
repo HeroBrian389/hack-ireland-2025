@@ -183,42 +183,6 @@
 
 ---
 
-### 2.2 **`prisma/migrations/20250222212244_init/migration.sql`**
-
-**Path:** `./prisma/migrations/20250222212244_init/migration.sql`
-
-**Purpose & Summary:**
-
-- Initial migration creating all core tables: `Post`, `Kiosk`, `Session`, `Conversation`, `ChatMessage`, `HealthMarker`, `Device`, `DeviceType`, `Recommendation`, `Referral`, `ExternalQuery`, `ExternalResult`, `Media`, `VisionAnalysis`, `ContinualVisionFeed`, `RealtimeSession`, `AuditLog`, `MetaReasoning`, `AnalysisStatus`, `GoogleFitTokens`.
-- Creates relevant foreign keys and indexes.
-
-<details>
-<summary>Key Points</summary>
-
-- Creates all primary keys, foreign keys referencing other tables (like `Session_kioskId_fkey`, `Conversation_sessionId_fkey`, etc.).
-- Includes `CREATE INDEX` statements for optimization (e.g. `Post_name_idx`, `Conversation_sessionId_key`).
-</details>
-
----
-
-### 2.3 **`prisma/migrations/20250222221445_make_analysis_status_fields_optional/migration.sql`**
-
-**Path:** `./prisma/migrations/20250222221445_make_analysis_status_fields_optional/migration.sql`
-
-**Purpose & Summary:**
-
-- Updates `AnalysisStatus` table to allow optional fields.
-- Drops and recreates table with updated schema (makes certain text fields optional).
-
-<details>
-<summary>Key Points</summary>
-
-- `missingCriticalInfo`, `recommendedNextSteps`, `urgencyLevel`, and `reasoning` become nullable.
-- Data is migrated from old table to new table (`INSERT INTO "new_AnalysisStatus" SELECT ...`).
-</details>
-
----
-
 ## 3. Scripting & Worker
 
 ### 3.1 **`./scripts/worker.ts`**
