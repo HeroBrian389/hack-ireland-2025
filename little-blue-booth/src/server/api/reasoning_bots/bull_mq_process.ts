@@ -408,3 +408,118 @@ async function runInformationCompletenessCheck(job: Job<JobData>) {
     throw new Error(`Information completeness check failed: ${errorMessage}`);
   }
 }
+
+
+
+// Add a new interface for our summary job
+interface SummaryJobData {
+  sessionId: string;
+  summaryContent?: string;
+}
+
+async function runGenerateSummary(job: Job<SummaryJobData>) {
+  /**
+   * 1) Gather relevant session data (conversation, analysis, markers, etc.)
+   */
+  const sessionId = job.data.sessionId;
+
+  const session = await db.session.findUnique({
+    where: { id: sessionId },
+    include: {
+      conversation: {
+        include: {
+          chatMessages: true,
+        },
+      },
+      healthMarkers: true,
+      recommendations: true,
+      analysisStatuses: true,
+      metaReasonings: true,
+      // add any other relations you want to incorporate
+    },
+  });
+
+  if (!session) {
+    throw new Error(`Session ${sessionId} not found while generating summary.`);
+  }
+
+  // Convert messages into a user/assistant/system conversation format
+  let conversationText = "";
+  if (session.conversation) {
+    // Sort messages by timestamp if needed
+    const sortedMessages = [...session.conversation.chatMessages].sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    for (const msg of sortedMessages) {
+      conversationText += `\n[${msg.sender}]: ${msg.messageText}`;
+    }
+  }
+
+  // You can incorporate healthMarkers, recommendations, etc. into a "context" block
+  const additionalContext = `
+Health Markers: ${JSON.stringify(session.healthMarkers, null, 2)}
+Recommendations: ${JSON.stringify(session.recommendations, null, 2)}
+Analysis: ${JSON.stringify(session.analysisStatuses, null, 2)}
+MetaReasoning: ${JSON.stringify(session.metaReasonings, null, 2)}
+`;
+
+  // 2) Prompt GPT-4 or similar
+  const systemPrompt = `
+You are a helpful medical summary assistant.
+Generate a structured summary in valid Markdown, with headings, bullet points, and any relevant details.
+Include key health markers, major conversation points, recommended next steps, etc.
+
+Format:
+# Consultation Summary
+## Overview
+(brief overview)
+## Key Discussion Points
+- ...
+## Health Markers
+- ...
+## Recommendations
+- ...
+## Additional Notes
+(whatever else)
+  `;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4-turbo-preview",
+    messages: [
+      {
+        role: "system",
+        content: systemPrompt,
+      },
+      {
+        role: "user",
+        content: `Conversation:\n${conversationText}\n\nAdditional Context:\n${additionalContext}`,
+      },
+    ],
+    temperature: 0.7,
+    max_tokens: 2000,
+  });
+
+  const summary = response.choices[0]?.message?.content ?? "No summary generated.";
+
+  // 3) Store or return the summary
+  // For demonstration, let's just store the summary in the job's return value
+  await job.updateData({
+    summaryContent: summary,
+  });
+
+  // Optionally also store in DB if you want a permanent record
+  await db.metaReasoning.create({
+    data: {
+      sessionId,
+      agentType: "summaryAgent",
+      analysisContent: summary,
+    },
+  });
+
+  console.log(`Summary generated for session ${sessionId}`);
+  return {
+    processed: true,
+    summaryContent: summary,
+  };
+}
