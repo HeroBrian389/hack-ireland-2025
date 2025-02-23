@@ -405,6 +405,22 @@ export default function HomePage() {
   // Add effect to handle summary navigation
   useEffect(() => {
     if (summaryMarkdown) {
+      const checkHeartCondition = async () => {
+        const response = await fetch('http://localhost:3000/api/check_heart', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: summaryMarkdown
+          })
+        });
+        const data = await response.json();
+        if (data.isHeartAttack === true) {
+          router.push('http://localhost:3000/emergency_number');
+        }
+      };
+      checkHeartCondition();
       router.push(`/end?summary=${encodeURIComponent(summaryMarkdown)}`);
     }
   }, [summaryMarkdown, router]);
