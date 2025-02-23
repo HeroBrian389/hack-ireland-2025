@@ -8,6 +8,7 @@ interface WebRTCState {
   isLoading: boolean;
   error: string | null;
   isMuted: boolean;
+  isConnecting: boolean;
 }
 
 interface WebRTCMessage {
@@ -78,7 +79,7 @@ interface ReasonResponse {
 
 interface WebRTCHook extends WebRTCState {
   messages: Message[];
-  connect: () => Promise<void>;
+  connect: (userName?: string) => Promise<void>;
   disconnect: () => void;
   sendMessage: (message: WebRTCMessage) => void;
   sendUserMessage: (text: string) => void;
@@ -95,6 +96,7 @@ export const useWebRTC = (): WebRTCHook => {
     isLoading: false,
     error: null,
     isMuted: false,
+    isConnecting: false,
   });
 
   const peerConnection = useRef<RTCPeerConnection | null>(null);
@@ -128,15 +130,28 @@ export const useWebRTC = (): WebRTCHook => {
     }
   };
 
-  const initializeConnection = async () => {
+  const initializeConnection = async (userName?: string) => {
     try {
-      setWebRTCState((prev) => ({ ...prev, isLoading: true, error: null }));
+      console.debug(
+        "[WebRTC] Initializing connection with userName:",
+        userName,
+      );
 
-      // Get session ID from your server
-      const tokenResponse = await fetch("/api/session");
-      const data = (await tokenResponse.json()) as SessionResponse;
+      // Construct URL with userName parameter if provided
+      const url = new URL("/api/session", window.location.origin);
+      if (userName?.trim()) {
+        url.searchParams.append("userName", userName.trim());
+      }
+      console.debug("[WebRTC] Session URL:", url.toString());
 
-      const EPHEMERAL_KEY = data.client_secret.value;
+      const tokenResponse = await fetch(url);
+      if (!tokenResponse.ok) {
+        throw new Error("Failed to get session token");
+      }
+
+      const { client_secret } = (await tokenResponse.json()) as SessionResponse;
+
+      const EPHEMERAL_KEY = client_secret.value;
 
       if (!EPHEMERAL_KEY) {
         throw new Error("Failed to get valid ephemeral key");
@@ -184,7 +199,7 @@ export const useWebRTC = (): WebRTCHook => {
             console.debug(
               `[WebRTC] transcription.completed: transcript="${event.transcript}", itemId=${
                 event.item?.id ?? "(none)"
-              }`
+              }`,
             );
             if (event.transcript) {
               const newMessage = {
@@ -194,29 +209,43 @@ export const useWebRTC = (): WebRTCHook => {
               };
 
               // ───── Unified Duplicate Check ─────
-              const isDuplicate = conversationRef.current.some((existingMsg) => {
-                const sameRole = existingMsg.role === newMessage.role;
-                const sameContent = existingMsg.content.trim() === newMessage.content;
-                const timeDiff = Math.abs(
-                  new Date(existingMsg.timestamp).getTime() -
-                    new Date(newMessage.timestamp).getTime()
-                );
-                return sameRole && sameContent && timeDiff < 2000;
-              });
+              const isDuplicate = conversationRef.current.some(
+                (existingMsg) => {
+                  const sameRole = existingMsg.role === newMessage.role;
+                  const sameContent =
+                    existingMsg.content.trim() === newMessage.content;
+                  const timeDiff = Math.abs(
+                    new Date(existingMsg.timestamp).getTime() -
+                      new Date(newMessage.timestamp).getTime(),
+                  );
+                  return sameRole && sameContent && timeDiff < 2000;
+                },
+              );
 
-              console.debug("[WebRTC] transcription.completed -> isDuplicate?", isDuplicate);
+              console.debug(
+                "[WebRTC] transcription.completed -> isDuplicate?",
+                isDuplicate,
+              );
 
               if (!isDuplicate) {
                 addMessage("user", event.transcript.trim());
               } else {
-                console.debug("[WebRTC] Skipped adding duplicate transcription message");
+                console.debug(
+                  "[WebRTC] Skipped adding duplicate transcription message",
+                );
               }
 
               // Process any pending medical reasoning calls
               if (pendingCallsRef.current.length > 0) {
-                console.debug("[WebRTC] We have pending calls:", pendingCallsRef.current);
+                console.debug(
+                  "[WebRTC] We have pending calls:",
+                  pendingCallsRef.current,
+                );
                 pendingCallsRef.current.forEach((callId) => {
-                  void doMedicalReasoning(callId, isDuplicate ? undefined : newMessage);
+                  void doMedicalReasoning(
+                    callId,
+                    isDuplicate ? undefined : newMessage,
+                  );
                 });
                 setPendingMedicalReasoningCalls([]);
                 pendingCallsRef.current = [];
@@ -269,21 +298,35 @@ export const useWebRTC = (): WebRTCHook => {
             console.debug("[WebRTC] response.done event:", event.response);
             if (event.response?.output) {
               event.response.output.forEach((outputItem) => {
-                if (outputItem.type === "function_call" && outputItem.name === "medical_reasoning") {
+                if (
+                  outputItem.type === "function_call" &&
+                  outputItem.name === "medical_reasoning"
+                ) {
                   const callId = outputItem.call_id ?? outputItem.id;
-                  console.debug("[WebRTC] Detected function_call for medical_reasoning, callId:", callId);
+                  console.debug(
+                    "[WebRTC] Detected function_call for medical_reasoning, callId:",
+                    callId,
+                  );
                   if (callId) {
-                    setPendingMedicalReasoningCalls((prev) => [...prev, callId]);
+                    setPendingMedicalReasoningCalls((prev) => [
+                      ...prev,
+                      callId,
+                    ]);
                     pendingCallsRef.current.push(callId);
 
                     // Mute ourselves
                     if (audioStream.current) {
-                      audioStream.current.getAudioTracks().forEach((track) => (track.enabled = false));
+                      audioStream.current
+                        .getAudioTracks()
+                        .forEach((track) => (track.enabled = false));
                       setWebRTCState((prev) => ({ ...prev, isMuted: true }));
                     }
                   }
                 } else if (outputItem.type === "text" && outputItem.text) {
-                  console.debug("[WebRTC] response.done -> text:", outputItem.text);
+                  console.debug(
+                    "[WebRTC] response.done -> text:",
+                    outputItem.text,
+                  );
                   addMessage("assistant", outputItem.text.trim());
                 }
               });
@@ -343,14 +386,32 @@ export const useWebRTC = (): WebRTCHook => {
 
       setWebRTCState((prev) => ({ ...prev, isLoading: false }));
     } catch (error) {
-      console.error("WebRTC initialization error:", error);
+      console.error("[WebRTC] Initialization error:", error);
       setWebRTCState((prev) => ({
         ...prev,
-        isLoading: false,
         error:
           error instanceof Error
             ? error.message
-            : "Failed to initialize WebRTC",
+            : "Failed to initialize connection",
+        isLoading: false,
+        isConnecting: false,
+      }));
+      throw error;
+    }
+  };
+
+  const connect = async (userName?: string) => {
+    try {
+      setWebRTCState((prev) => ({ ...prev, isConnecting: true }));
+      // Only pass userName if it exists and isn't empty
+      await initializeConnection(userName?.trim() ?? undefined);
+    } catch (error) {
+      console.error("WebRTC connection error:", error);
+      setWebRTCState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : "Failed to connect",
+        isConnecting: false,
       }));
     }
   };
@@ -389,22 +450,28 @@ export const useWebRTC = (): WebRTCHook => {
   };
 
   const sendMessage = (message: WebRTCMessage) => {
-    console.debug('[WebRTC] Attempting to send message:', message);
+    console.debug("[WebRTC] Attempting to send message:", message);
     if (dataChannel.current?.readyState === "open") {
-      console.debug('[WebRTC] DataChannel is open, sending message');
+      console.debug("[WebRTC] DataChannel is open, sending message");
       dataChannel.current.send(JSON.stringify(message));
-      console.debug('[WebRTC] Message sent successfully');
+      console.debug("[WebRTC] Message sent successfully");
     } else {
-      console.error('[WebRTC] Cannot send message - data channel not open');
+      console.error("[WebRTC] Cannot send message - data channel not open");
     }
   };
 
   const sendUserMessage = (text: string) => {
     console.debug("[WebRTC] sendUserMessage called with text:", text);
-    console.debug("[WebRTC] DataChannel state:", dataChannel.current?.readyState);
+    console.debug(
+      "[WebRTC] DataChannel state:",
+      dataChannel.current?.readyState,
+    );
 
     if (dataChannel.current?.readyState === "open") {
-      console.debug("[WebRTC] Current conversation state before send:", conversationRef.current);
+      console.debug(
+        "[WebRTC] Current conversation state before send:",
+        conversationRef.current,
+      );
 
       const messagePayload = {
         type: "conversation.item.create",
@@ -426,7 +493,10 @@ export const useWebRTC = (): WebRTCHook => {
         type: "response.create",
       });
 
-      console.debug("[WebRTC] Current conversation state after send:", conversationRef.current);
+      console.debug(
+        "[WebRTC] Current conversation state after send:",
+        conversationRef.current,
+      );
     } else {
       console.error("[WebRTC] Cannot send message - data channel not open");
     }
@@ -444,6 +514,7 @@ export const useWebRTC = (): WebRTCHook => {
       isLoading: false,
       error: null,
       isMuted: false,
+      isConnecting: false,
     });
     clearMessages();
   };
@@ -535,7 +606,7 @@ export const useWebRTC = (): WebRTCHook => {
   return {
     ...webRTCState,
     messages: state.messages,
-    connect: initializeConnection,
+    connect,
     disconnect,
     sendMessage,
     sendUserMessage,

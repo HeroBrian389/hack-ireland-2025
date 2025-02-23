@@ -135,6 +135,10 @@ export const kioskRouter = createTRPCRouter({
               }
 
               if (fitData.height !== null) {
+                console.log(
+                  "[GoogleFit] Adding height marker:",
+                  fitData.height,
+                );
                 healthMarkerPromises.push(
                   ctx.db.healthMarker.create({
                     data: {
@@ -147,6 +151,10 @@ export const kioskRouter = createTRPCRouter({
               }
 
               if (fitData.weight !== null) {
+                console.log(
+                  "[GoogleFit] Adding weight marker:",
+                  fitData.weight,
+                );
                 healthMarkerPromises.push(
                   ctx.db.healthMarker.create({
                     data: {
@@ -159,6 +167,10 @@ export const kioskRouter = createTRPCRouter({
               }
 
               if (fitData.heartRate !== null) {
+                console.log(
+                  "[GoogleFit] Adding heart rate marker:",
+                  fitData.heartRate,
+                );
                 healthMarkerPromises.push(
                   ctx.db.healthMarker.create({
                     data: {
@@ -171,6 +183,10 @@ export const kioskRouter = createTRPCRouter({
               }
 
               if (fitData.bloodPressure !== null) {
+                console.log(
+                  "[GoogleFit] Adding blood pressure marker:",
+                  fitData.bloodPressure,
+                );
                 healthMarkerPromises.push(
                   ctx.db.healthMarker.create({
                     data: {
@@ -186,6 +202,10 @@ export const kioskRouter = createTRPCRouter({
               }
 
               if (fitData.bloodOxygen !== null) {
+                console.log(
+                  "[GoogleFit] Adding blood oxygen marker:",
+                  fitData.bloodOxygen,
+                );
                 healthMarkerPromises.push(
                   ctx.db.healthMarker.create({
                     data: {
