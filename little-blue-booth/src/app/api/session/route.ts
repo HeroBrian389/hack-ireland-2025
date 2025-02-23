@@ -1,10 +1,21 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from "next/server";
 
 if (!process.env.OPENAI_API_KEY) {
-  throw new Error('Missing OPENAI_API_KEY environment variable');
+  throw new Error("Missing OPENAI_API_KEY environment variable");
 }
 
-const MEDICAL_SYSTEM_PROMPT = `
+export async function GET(request: Request) {
+  try {
+    // Get the user's name from the query parameters
+    const { searchParams } = new URL(request.url);
+    const userName = searchParams.get("userName");
+    console.log("[Session] User name:", userName);
+
+    const MEDICAL_SYSTEM_PROMPT = `
+<patient_info>
+${userName ? `You are speaking with ${userName}. Always address them by their name.` : "You will need to ask the patient for their name."}
+</patient_info>
+
 <context>
 You are a friendly, direct, and professional AI GP doctor. Act like a human.
 
@@ -17,7 +28,7 @@ Always ask one question or make one statement at a time. Never overwhelm a patie
 
 <consultation phases>
 You will be interacting with a patient. The consultation will take place over 3 phases.
-1. Gathering basic data. You will find out the patient's name, date of birth, address.
+1. Gathering basic data. ${userName ? `You already know the patient's name is ${userName}. Now gather their date of birth and address.` : "You will find out the patient's name, date of birth, address."}
 2. Gathering basic health markers. You will ask the patient to step on the scales for their weight, use a measuring tape for their height (and hence BMI), and ask them to take their blood pressure.
 3. Medical history. You will gather a very brief medical history. Keep this short and snappy.
 4. Current complaint. You will briefly go through the current complaint.
@@ -31,52 +42,46 @@ You have the ability to see the patient through a vision analysis description. T
 Always provide the patient with details of the vision analysis if they request it. Do not evasive as this would be deceitful.
 </vision>
 `;
-export async function GET() {
-  try {
+
     // Create a realtime session directly - this will return both the session info and client secret
-    const sessionResponse = await fetch('https://api.openai.com/v1/realtime/sessions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
+    const sessionResponse = await fetch(
+      "https://api.openai.com/v1/realtime/sessions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-realtime-preview-2024-12-17",
+          voice: "ballad",
+          turn_detection: {
+            type: "server_vad",
+            threshold: 0.8,
+            prefix_padding_ms: 1000,
+            silence_duration_ms: 1000,
+            create_response: true,
+          },
+          input_audio_transcription: {
+            model: "whisper-1",
+          },
+          instructions: MEDICAL_SYSTEM_PROMPT,
+        }),
       },
-      body: JSON.stringify({
-        model: 'gpt-4o-realtime-preview-2024-12-17',
-        voice: 'ballad',
-        turn_detection: {
-          type: 'server_vad',
-          threshold: 0.8,
-          prefix_padding_ms: 1000,
-          silence_duration_ms: 1000,
-          create_response: true,
-        },
-        input_audio_transcription: {
-          model: 'whisper-1'
-        },
-        // tools: [{
-        //   type: 'function',
-        //   name: 'medical_reasoning',
-        //   description: 'Call this for advanced medical reasoning and diagnosis',
-        //   parameters: {
-        //     type: 'object',
-        //     properties: {},
-        //     required: []
-        //   }
-        // }],
-        instructions: MEDICAL_SYSTEM_PROMPT
-      }),
-    });
+    );
 
     if (!sessionResponse.ok) {
       // Get the error details from the response
       const errorData = await sessionResponse.json();
-      console.error('OpenAI API Error Details:', {
+      console.error("OpenAI API Error Details:", {
         status: sessionResponse.status,
         statusText: sessionResponse.statusText,
         headers: Object.fromEntries(sessionResponse.headers.entries()),
-        error: errorData
+        error: errorData,
       });
-      throw new Error(`OpenAI API error: ${sessionResponse.status} - ${JSON.stringify(errorData)}`);
+      throw new Error(
+        `OpenAI API error: ${sessionResponse.status} - ${JSON.stringify(errorData)}`,
+      );
     }
 
     const sessionData = await sessionResponse.json();
@@ -85,14 +90,14 @@ export async function GET() {
     return NextResponse.json(sessionData);
   } catch (err) {
     const error = err as Error;
-    console.error('Error creating session:', error);
+    console.error("Error creating session:", error);
     // Include more error details in the response
     return NextResponse.json(
       {
-        error: 'Failed to create session',
-        details: error.message
+        error: "Failed to create session",
+        details: error.message,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
-} 
+}

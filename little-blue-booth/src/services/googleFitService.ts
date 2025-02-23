@@ -182,12 +182,8 @@ export async function getFitData(userId: string): Promise<{
   const processDataset = (bucket: GoogleFitBucket): typeof result => {
     const processedResult = { ...result };
 
-    console.log("[GoogleFit Debug] Processing bucket:", bucket);
-
     bucket.dataset?.forEach((dataset) => {
       const dsId = dataset.dataSourceId ?? "";
-      console.log("[GoogleFit Debug] Dataset source:", dsId);
-      console.log("[GoogleFit Debug] Dataset points:", dataset.point);
 
       if (!dataset?.point?.[0]?.value) return;
 
