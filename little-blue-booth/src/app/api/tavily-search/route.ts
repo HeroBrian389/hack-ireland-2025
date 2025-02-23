@@ -8,11 +8,11 @@ const TavilySearchSchema = z.object({
   searchDepth: z.enum(['basic', 'advanced']).optional().default('basic'),
   topic: z.enum(['general', 'news']).optional().default('general'),
   days: z.number().optional().default(3),
-  timeRange: z.string().optional(),
+  timeRange: z.enum(['year', 'month', 'week', 'day', 'y', 'm', 'w', 'd']).optional(),
   maxResults: z.number().min(0).max(20).optional().default(5),
   includeImages: z.boolean().optional().default(false),
   includeImageDescriptions: z.boolean().optional().default(false),
-  includeAnswer: z.union([z.boolean(), z.string()]).optional().default(false),
+  includeAnswer: z.boolean().optional().default(false),
   includeRawContent: z.boolean().optional().default(false),
   includeDomains: z.array(z.string()).optional().default([]),
   excludeDomains: z.array(z.string()).optional().default([]),
@@ -20,12 +20,13 @@ const TavilySearchSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = await request.json() as z.infer<typeof TavilySearchSchema>;
     const params = TavilySearchSchema.parse(body);
 
-    const client = tavily({ apiKey: env.server.TAVILY_API_KEY });
+    const client = tavily({ apiKey: env.TAVILY_API_KEY });
 
-    const result = await client.search(params);
+    const { query, ...options } = params;
+    const result = await client.search(query, options);
 
     return NextResponse.json({ success: true, result });
   } catch (error) {
