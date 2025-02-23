@@ -51,6 +51,42 @@ export async function handleCallback(code: string, userId: string) {
   });
 }
 
+interface GoogleFitDataPoint {
+  startTimeNanos: string;
+  endTimeNanos: string;
+  value: Array<{
+    fpVal?: number;
+    intVal?: number;
+  }>;
+}
+
+interface GoogleFitDataset {
+  dataSourceId?: string | null;
+  point?: GoogleFitDataPoint[];
+}
+
+interface GoogleFitBucket {
+  startTimeMillis?: string | null;
+  endTimeMillis?: string | null;
+  dataset?: GoogleFitDataset[] | null;
+}
+
+interface GoogleFitResponse {
+  bucket: GoogleFitBucket[];
+}
+
+// Updated DATA_SOURCES to match aggregated format
+const DATA_SOURCES = {
+  HEART_RATE:
+    "derived:com.google.heart_rate.summary:com.google.android.gms:aggregated",
+  BLOOD_PRESSURE:
+    "derived:com.google.blood_pressure.summary:com.google.android.gms:aggregated",
+  OXYGEN_SATURATION:
+    "derived:com.google.oxygen_saturation.summary:com.google.android.gms:aggregated",
+  WEIGHT: "derived:com.google.weight.summary:com.google.android.gms:aggregated",
+  HEIGHT: "derived:com.google.height.summary:com.google.android.gms:aggregated",
+} as const;
+
 export async function getFitData(userId: string): Promise<{
   bmi: number | null;
   height: number | null;
@@ -70,7 +106,7 @@ export async function getFitData(userId: string): Promise<{
     expiry_date: Number(tokens.expiryDate),
   });
 
-  // Check if token needs refresh (if less than 5 minutes remaining)
+  // Refresh token if less than 5 minutes remain
   if (
     tokens.expiryDate &&
     Number(tokens.expiryDate) - Date.now() < 5 * 60 * 1000
@@ -88,7 +124,6 @@ export async function getFitData(userId: string): Promise<{
 
   const fitness = google.fitness({ version: "v1", auth: oauth2Client });
   const now = Date.now();
-  // Get last 24 hours of data
   const oneDayAgo = now - 24 * 60 * 60 * 1000;
 
   const response = await fitness.users.dataset.aggregate({
@@ -100,9 +135,8 @@ export async function getFitData(userId: string): Promise<{
         { dataTypeName: "com.google.oxygen_saturation" },
         { dataTypeName: "com.google.weight" },
         { dataTypeName: "com.google.height" },
-        { dataTypeName: "com.google.body.fat.percentage" }, // For BMI calculation
       ],
-      bucketByTime: { durationMillis: "86400000" }, // 24 hours in milliseconds
+      bucketByTime: { durationMillis: "86400000" },
       startTimeMillis: oneDayAgo.toString(),
       endTimeMillis: now.toString(),
     },
@@ -123,8 +157,9 @@ export async function getFitData(userId: string): Promise<{
     };
   }
 
-  // Process the response data
-  const latestBucket = response.data.bucket[response.data.bucket.length - 1];
+  // Cast the response buckets to your type.
+  const buckets = response.data.bucket as unknown as GoogleFitBucket[];
+
   const result = {
     bmi: null as number | null,
     height: null as number | null,
@@ -137,41 +172,63 @@ export async function getFitData(userId: string): Promise<{
     bloodOxygen: null as number | null,
   };
 
-  // Helper function to get the latest value from a dataset
-  const getLatestValue = (dataset: any) => {
-    if (!dataset?.point?.[0]?.value?.[0]?.fpVal) return null;
-    return dataset.point[0].value[0].fpVal;
+  const getLatestValue = (dataset: GoogleFitDataset): number | null => {
+    const valueObj = dataset?.point?.[0]?.value?.[0];
+    if (valueObj?.fpVal !== undefined) return valueObj.fpVal;
+    if (valueObj?.intVal !== undefined) return valueObj.intVal;
+    return null;
   };
 
-  latestBucket.dataset?.forEach((dataset: any) => {
-    switch (dataset.dataSourceId) {
-      case "derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm":
-        result.heartRate = getLatestValue(dataset);
-        break;
-      case "derived:com.google.blood_pressure:com.google.android.gms:merged":
-        const systolic = dataset?.point?.[0]?.value?.[0]?.fpVal;
-        const diastolic = dataset?.point?.[0]?.value?.[1]?.fpVal;
-        if (systolic && diastolic) {
-          result.bloodPressure = { systolic, diastolic };
-        }
-        break;
-      case "derived:com.google.oxygen_saturation:com.google.android.gms:merged":
-        result.bloodOxygen = getLatestValue(dataset);
-        break;
-      case "derived:com.google.weight:com.google.android.gms:merged":
-        result.weight = getLatestValue(dataset);
-        break;
-      case "derived:com.google.height:com.google.android.gms:merged":
-        result.height = getLatestValue(dataset);
-        break;
-    }
-  });
+  const processDataset = (bucket: GoogleFitBucket): typeof result => {
+    const processedResult = { ...result };
 
-  // Calculate BMI if we have both height and weight
-  if (result.height && result.weight) {
-    const heightInMeters = result.height / 100; // Convert cm to meters
-    result.bmi = result.weight / (heightInMeters * heightInMeters);
+    console.log("[GoogleFit Debug] Processing bucket:", bucket);
+
+    bucket.dataset?.forEach((dataset) => {
+      const dsId = dataset.dataSourceId ?? "";
+      console.log("[GoogleFit Debug] Dataset source:", dsId);
+      console.log("[GoogleFit Debug] Dataset points:", dataset.point);
+
+      if (!dataset?.point?.[0]?.value) return;
+
+      if (dsId.includes("heart_rate")) {
+        processedResult.heartRate = getLatestValue(dataset);
+      } else if (dsId.includes("blood_pressure")) {
+        const systolic = dataset?.point?.[0]?.value?.[0]?.fpVal ?? null;
+        const diastolic = dataset?.point?.[0]?.value?.[1]?.fpVal ?? null;
+        if (systolic !== null && diastolic !== null) {
+          processedResult.bloodPressure = { systolic, diastolic };
+        }
+      } else if (dsId.includes("oxygen_saturation")) {
+        processedResult.bloodOxygen = getLatestValue(dataset);
+      } else if (dsId.includes("weight")) {
+        processedResult.weight = getLatestValue(dataset);
+      } else if (dsId.includes("height")) {
+        processedResult.height = getLatestValue(dataset);
+      }
+    });
+
+    return processedResult;
+  };
+
+  const processedResults = buckets.map(processDataset);
+  const finalResult = processedResults.reduce(
+    (acc, curr) => ({
+      bmi: curr.bmi ?? acc.bmi,
+      height: curr.height ?? acc.height,
+      weight: curr.weight ?? acc.weight,
+      heartRate: curr.heartRate ?? acc.heartRate,
+      bloodPressure: curr.bloodPressure ?? acc.bloodPressure,
+      bloodOxygen: curr.bloodOxygen ?? acc.bloodOxygen,
+    }),
+    result,
+  );
+
+  if (finalResult.height && finalResult.weight) {
+    const heightInMeters = finalResult.height / 100;
+    finalResult.bmi = finalResult.weight / (heightInMeters * heightInMeters);
   }
 
-  return result;
+  console.log("[Google Fit] Final result:", finalResult);
+  return finalResult;
 }
