@@ -318,6 +318,7 @@ export default function HomePage() {
         const currentTimestamp = new Date().toISOString();
         setLastAnalysisTimestamp(currentTimestamp);
 
+        
         // Add to insights
         setInsights((prev) => [
           ...prev,
