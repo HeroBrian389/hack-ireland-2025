@@ -1,5 +1,3 @@
-
-
 // Add interfaces for job data
 export interface JobData {
   processed?: boolean;
@@ -12,6 +10,7 @@ export interface WorkerJob {
 
 
 export interface UserAssistantMessage {
+  id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: string;
