@@ -2,11 +2,24 @@
 
 import { useSearchParams } from 'next/navigation';
 import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 export default function EndPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const summary = searchParams.get('summary')?.replace(/-/g, '');
+
+  useEffect(() => {
+    if (summary) {
+      fetch('/api/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ summary }),
+      });
+    }
+  }, [summary]);
 
   const formattedSummary = summary?.split('**').map((text, index) => (
     <p key={index} className="mb-4">
