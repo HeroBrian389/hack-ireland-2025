@@ -4,6 +4,20 @@ if (!process.env.OPENAI_API_KEY) {
   throw new Error("Missing OPENAI_API_KEY environment variable");
 }
 
+interface OpenAIErrorResponse {
+  error: {
+    message: string;
+    type: string;
+    code: string;
+  };
+}
+
+interface OpenAISessionResponse {
+  id: string;
+  client_secret: string;
+  url: string;
+}
+
 export async function GET(request: Request) {
   try {
     // Get the user's name from the query parameters
@@ -123,8 +137,7 @@ Interpretation:
     );
 
     if (!sessionResponse.ok) {
-      // Get the error details from the response
-      const errorData = await sessionResponse.json();
+      const errorData = await sessionResponse.json() as OpenAIErrorResponse;
       console.error("OpenAI API Error Details:", {
         status: sessionResponse.status,
         statusText: sessionResponse.statusText,
@@ -136,7 +149,7 @@ Interpretation:
       );
     }
 
-    const sessionData = await sessionResponse.json();
+    const sessionData = await sessionResponse.json() as OpenAISessionResponse;
 
     // The session data will include the client_secret we need for WebRTC
     return NextResponse.json(sessionData);
