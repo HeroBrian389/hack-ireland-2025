@@ -3,9 +3,14 @@ import OpenAI from "openai";
 
 const openai = new OpenAI();
 
+interface Message {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
 export async function POST(req: Request) {
   try {
-    const { conversation } = await req.json();
+    const { conversation } = await req.json() as { conversation: Message[] };
 
     if (!Array.isArray(conversation)) {
       return NextResponse.json(
@@ -33,12 +38,12 @@ Format the summary with clear sections and bullet points where appropriate.`,
 
     // Generate the summary using OpenAI
     const response = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt-4o",
       messages: messages.map(msg => ({
         role: msg.role as "system" | "user" | "assistant",
         content: msg.content,
       })),
-      temperature: 0.7,
+      temperature: 0,
       max_tokens: 2000,
     });
 
