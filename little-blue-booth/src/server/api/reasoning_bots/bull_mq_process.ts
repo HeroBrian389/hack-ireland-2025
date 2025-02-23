@@ -176,6 +176,8 @@ async function runHealthMetricsExtraction(job: Job<JobData>) {
     // Query the AI to extract metrics
     const prompt = `Extract the following health metrics from the conversation, responding in a strict JSON format.
 {
+  "name": string | null,
+  "dob": string | null, // in DD-MM-YYYY format
   "bmi": number | null,
   "height": number | null, // in cm
   "weight": number | null, // in kg
@@ -191,13 +193,9 @@ ${job.data.conversation}`;
       model: "gpt-4o",
       response_format: { type: "json_object" },
       messages: [
-        {
-          role: "system",
-          content:
-            "You are a precise medical data extraction system. Only extract values that are explicitly stated in the conversation. Do not infer or calculate values unless explicitly mentioned. Respond with a JSON object containing the following fields: bmi (number|null), height (number|null), weight (number|null), heartRate (number|null), bloodPressure ({systolic: number|null, diastolic: number|null}|null), bloodOxygen (number|null)",
-        },
-        { role: "user", content: prompt },
-      ],
+        { role: "system", content: "You are a precise medical data extraction system. Only extract values that are explicitly stated in the conversation. Do not infer or calculate values unless explicitly mentioned. Respond with a JSON object containing the following fields: name (string|null), dob (string|null), bmi (number|null), height (number|null), weight (number|null), heartRate (number|null), bloodPressure ({systolic: number|null, diastolic: number|null}|null), bloodOxygen (number|null)" },
+        { role: "user", content: prompt }
+      ]
     });
 
     if (!completion.choices[0]?.message?.content) {
@@ -205,6 +203,8 @@ ${job.data.conversation}`;
     }
 
     const metrics = JSON.parse(completion.choices[0].message.content) as {
+      name: string | null;
+      dob: string | null; // in DD-MM-YYYY format
       bmi: number | null;
       height: number | null;
       weight: number | null;
@@ -215,8 +215,6 @@ ${job.data.conversation}`;
       } | null;
       bloodOxygen: number | null;
     };
-
-    console.log("metrics", metrics);
 
     // Store each metric in the database if not null and not already stored
     const existingTypes = new Set(existingMarkers.map((m) => m.markerType));
@@ -256,12 +254,23 @@ ${job.data.conversation}`;
           },
         });
         results.push(marker);
+
+      } else {
+        results.push(
+          await db.healthMarker.create({
+            data: {
+              sessionId: job.data.sessionId,
+              markerType: type,
+              data: JSON.stringify({ value })
+            }
+          })
+        )
       }
     }
 
     return {
       processed: true,
-      metrics: results,
+      data: results
     };
   } catch (error) {
     console.error("Error in health metrics extraction:", error);
@@ -327,11 +336,11 @@ async function runInformationCompletenessCheck(job: Job<JobData>) {
     const hasEnoughInformation = Boolean(
       ((extractedInfo.personalInfo?.name ?? null) &&
         (extractedInfo.personalInfo?.dateOfBirth ?? null)) ??
-        (healthMarkers && healthMarkers.length > 0) ??
-        ((extractedInfo.symptoms ?? null) &&
-          (extractedInfo.symptoms?.length ?? 0) > 0) ??
-        ((extractedInfo.medications ?? null) &&
-          (extractedInfo.medications?.length ?? 0) > 0),
+      (healthMarkers && healthMarkers.length > 0) ??
+      ((extractedInfo.symptoms ?? null) &&
+        (extractedInfo.symptoms?.length ?? 0) > 0) ??
+      ((extractedInfo.medications ?? null) &&
+        (extractedInfo.medications?.length ?? 0) > 0),
     );
 
     console.log("hasEnoughInformation", hasEnoughInformation);
@@ -386,7 +395,7 @@ async function runInformationCompletenessCheck(job: Job<JobData>) {
 
     return {
       processed: true,
-      analysis: result,
+      data: result
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
