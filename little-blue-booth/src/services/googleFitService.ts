@@ -136,7 +136,7 @@ export async function getFitData(userId: string): Promise<{
         { dataTypeName: "com.google.weight" },
         { dataTypeName: "com.google.height" },
       ],
-      bucketByTime: { durationMillis: "86400000" },
+      bucketByTime: { durationMillis: "86400000" }, // 24 hours
       startTimeMillis: oneDayAgo.toString(),
       endTimeMillis: now.toString(),
     },
