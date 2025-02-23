@@ -51,6 +51,7 @@ export interface WebRTCEvent {
   type: string;
   transcript?: string;
   item?: {
+    id?: string;
     role?: string;
     content?: {
       text: string;
@@ -176,45 +177,45 @@ export const useWebRTC = (): WebRTCHook => {
       dc.onmessage = (e: MessageEvent<string>) => {
         const event = JSON.parse(e.data) as WebRTCEvent;
         console.debug("[WebRTC] Received raw event:", event);
-        console.debug("[WebRTC] Current conversation state:", conversationRef.current);
 
         switch (event.type) {
-          case "conversation.item.input_audio_transcription.completed":
-            console.debug("[WebRTC] Processing transcription:", event.transcript);
+          // A) Audio transcription completed
+          case "conversation.item.input_audio_transcription.completed": {
+            console.debug(
+              `[WebRTC] transcription.completed: transcript="${event.transcript}", itemId=${
+                event.item?.id ?? "(none)"
+              }`
+            );
             if (event.transcript) {
-              // Create the message object
               const newMessage = {
                 role: "user" as const,
-                content: event.transcript,
+                content: event.transcript.trim(),
                 timestamp: new Date().toISOString(),
               };
 
-              // Check if this message is already in the conversation
-              const isDuplicate = conversationRef.current.some(
-                (msg) =>
-                  msg.role === newMessage.role &&
-                  msg.content === newMessage.content &&
-                  Math.abs(
-                    new Date(msg.timestamp).getTime() -
-                      new Date(newMessage.timestamp).getTime(),
-                  ) < 1000,
-              );
+              // ───── Unified Duplicate Check ─────
+              const isDuplicate = conversationRef.current.some((existingMsg) => {
+                const sameRole = existingMsg.role === newMessage.role;
+                const sameContent = existingMsg.content.trim() === newMessage.content;
+                const timeDiff = Math.abs(
+                  new Date(existingMsg.timestamp).getTime() -
+                    new Date(newMessage.timestamp).getTime()
+                );
+                return sameRole && sameContent && timeDiff < 2000;
+              });
 
-              console.log("isDuplicate", isDuplicate);
+              console.debug("[WebRTC] transcription.completed -> isDuplicate?", isDuplicate);
 
               if (!isDuplicate) {
-                console.debug("[WebRTC] Adding transcribed message:", newMessage);
-                addMessage("user", event.transcript);
+                addMessage("user", event.transcript.trim());
               } else {
-                console.debug("[WebRTC] Skipped duplicate transcribed message:", newMessage);
+                console.debug("[WebRTC] Skipped adding duplicate transcription message");
               }
 
               // Process any pending medical reasoning calls
-              const pendingCalls = pendingCallsRef.current;
-              if (pendingCalls.length > 0) {
-                console.debug("[WebRTC] Processing pending medical reasoning calls:", pendingCalls);
-                pendingCalls.forEach((callId) => {
-                  console.debug("[WebRTC] Initiating medical reasoning for call:", callId);
+              if (pendingCallsRef.current.length > 0) {
+                console.debug("[WebRTC] We have pending calls:", pendingCallsRef.current);
+                pendingCallsRef.current.forEach((callId) => {
                   void doMedicalReasoning(callId, isDuplicate ? undefined : newMessage);
                 });
                 setPendingMedicalReasoningCalls([]);
@@ -222,80 +223,77 @@ export const useWebRTC = (): WebRTCHook => {
               }
             }
             break;
+          }
 
-          case "conversation.item.created":
-            console.debug("[WebRTC] Processing conversation.item.created:", event.item);
-            const text = event.item?.content?.text;
-            const role = event.item?.role;
-            
-            if (text && role) {
-              const messageRole =
-                role === "assistant"
-                  ? "assistant"
-                  : role === "user"
-                    ? "user"
-                    : "system";
+          // B) conversation.item.created
+          // case "conversation.item.created": {
+          //   const text = event.item?.content?.text?.trim();
+          //   const roleStr = event.item?.role ?? "system";
+          //   const itemId = event.item?.id;
+          //   console.debug(
+          //     `[WebRTC] conversation.item.created: role="${roleStr}", text="${text}", itemId=${itemId}`
+          //   );
 
-              // Enhanced duplicate detection
-              const isDuplicate = conversationRef.current.some((msg) => {
-                const isSameContent = msg.role === messageRole && msg.content.trim() === text.trim();
-                const timeDiff = Math.abs(new Date(msg.timestamp).getTime() - Date.now());
-                console.debug("[WebRTC] Duplicate check:", {
-                  message: msg,
-                  isSameContent,
-                  timeDiff,
-                  threshold: 3000
-                });
-                return isSameContent && timeDiff < 3000;
-              });
+          //   if (text && roleStr) {
+          //     const messageRole =
+          //       roleStr === "assistant"
+          //         ? "assistant"
+          //         : roleStr === "user"
+          //         ? "user"
+          //         : "system";
 
-              console.log("isDuplicate2", isDuplicate);
+          //     // ───── Unified Duplicate Check ─────
+          //     const newTimestamp = new Date().toISOString();
+          //     const isDuplicate = conversationRef.current.some((existingMsg) => {
+          //       const sameRole = existingMsg.role === messageRole;
+          //       const sameContent = existingMsg.content.trim() === text;
+          //       const timeDiff = Math.abs(
+          //         new Date(existingMsg.timestamp).getTime() - new Date(newTimestamp).getTime()
+          //       );
+          //       return sameRole && sameContent && timeDiff < 2000;
+          //     });
 
-              if (!isDuplicate) {
-                console.debug("[WebRTC] Adding new message:", { role: messageRole, text });
-                addMessage(messageRole, text);
-                console.debug("[WebRTC] Updated conversation state:", conversationRef.current);
-              } else {
-                console.debug("[WebRTC] Skipped duplicate message:", { role: messageRole, text });
-              }
-            }
-            break;
+          //     console.debug("[WebRTC] item.created -> isDuplicate?", isDuplicate);
 
-          case "response.done":
-            console.debug("[WebRTC] Processing response.done:", event.response);
+          //     if (!isDuplicate) {
+          //       addMessage(messageRole, text);
+          //     } else {
+          //       console.debug("[WebRTC] Skipped adding duplicate item.created message");
+          //     }
+          //   }
+          //   break;
+          // }
+
+          // C) response.done
+          case "response.done": {
+            console.debug("[WebRTC] response.done event:", event.response);
             if (event.response?.output) {
               event.response.output.forEach((outputItem) => {
-                console.debug("[WebRTC] Processing output item:", outputItem);
-                if (
-                  outputItem.type === "function_call" &&
-                  outputItem.name === "medical_reasoning"
-                ) {
+                if (outputItem.type === "function_call" && outputItem.name === "medical_reasoning") {
                   const callId = outputItem.call_id ?? outputItem.id;
-                  console.debug("[WebRTC] Medical reasoning function call detected:", {
-                    outputItem,
-                    callId,
-                  });
+                  console.debug("[WebRTC] Detected function_call for medical_reasoning, callId:", callId);
                   if (callId) {
                     setPendingMedicalReasoningCalls((prev) => [...prev, callId]);
-                    pendingCallsRef.current = [...pendingCallsRef.current, callId];
+                    pendingCallsRef.current.push(callId);
+
+                    // Mute ourselves
                     if (audioStream.current) {
-                      const audioTracks = audioStream.current.getAudioTracks();
-                      audioTracks.forEach((track) => {
-                        track.enabled = false;
-                      });
+                      audioStream.current.getAudioTracks().forEach((track) => (track.enabled = false));
                       setWebRTCState((prev) => ({ ...prev, isMuted: true }));
                     }
                   }
                 } else if (outputItem.type === "text" && outputItem.text) {
-                  console.debug("[WebRTC] Adding assistant message:", outputItem.text);
-                  addMessage("assistant", outputItem.text);
+                  console.debug("[WebRTC] response.done -> text:", outputItem.text);
+                  addMessage("assistant", outputItem.text.trim());
                 }
               });
             }
             break;
+          }
 
+          // D) error
           case "error":
-            console.error("[WebRTC] Received error event:", event.error);
+            console.error("[WebRTC] event.error:", event.error);
             addMessage("system", `Error: ${event.error ?? "Unknown error"}`);
             break;
         }
