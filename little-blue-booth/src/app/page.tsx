@@ -23,7 +23,7 @@ import { ConfirmDialog } from "~/app/components/ConfirmDialog";
 import { ControlButton } from "~/app/components/ControlButton";
 import { FileUploadSection } from "~/app/components/FileUploadSection";
 import { SessionIdDisplay } from "~/app/components/SessionIdDisplay";
-import { WorkerStatus } from "~/app/components/WorkerStatus";
+import { WorkerDataDisplay } from "~/app/components/WorkerDataDisplay";
 import { AnalysisStatus } from "~/app/components/AnalysisStatus";
 import { AnalyzedFilesList } from "~/app/components/AnalyzedFilesList";
 import { InsightsList } from "~/app/components/InsightsList";
@@ -122,11 +122,11 @@ export default function HomePage() {
 
   // Polling worker data
   const { data: workerData, isLoading: isPollingLoading } = api.polling.polling.useQuery(
-    undefined,
+    { workerIds },
     {
       refetchInterval: 2000,
       refetchIntervalInBackground: true,
-      enabled: isConsultationStarted,
+      enabled: isConsultationStarted && workerIds.length > 0,
     }
   );
 
@@ -335,7 +335,6 @@ export default function HomePage() {
   // Modify the handleUploadFiles function
   const handleUploadFiles = async (uploadFiles: FileList) => {
     try {
-      console.log("Uploading files:", uploadFiles);
       if (uploadFiles.length === 0) return;
       
       if (!userId) {
@@ -505,8 +504,12 @@ export default function HomePage() {
 
       {/* Worker & Analysis Status (top-right corner) */}
       {isConsultationStarted && (
-        <div className="absolute left-16 top-4 z-50 space-y-4">
-          <WorkerStatus isPollingLoading={isPollingLoading} />
+        <div className="absolute right-4 w-64 top-20 z-50 space-y-4">
+          <WorkerDataDisplay 
+            workerData={workerData} 
+            jobStatuses={jobStatuses} 
+            isPollingLoading={isPollingLoading} 
+          />
         </div>
       )}
 
@@ -717,6 +720,7 @@ export default function HomePage() {
           </>
         )}
       </AnimatePresence>
+      
 
       {/* End Consultation Confirmation Dialog */}
       <ConfirmDialog
