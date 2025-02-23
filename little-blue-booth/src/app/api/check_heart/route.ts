@@ -16,7 +16,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-
+    console.log(text)
     const prompt = `
       Analyze the following text and determine if the symptoms suggest a heart attack. 
       Common heart attack symptoms include:

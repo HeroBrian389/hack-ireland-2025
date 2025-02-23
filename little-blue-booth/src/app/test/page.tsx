@@ -7,7 +7,7 @@ export default function TestPage() {
 
   useEffect(() => {
     const checkHeartCondition = async () => {
-      const response = await fetch('http://localhost:3000/api/check_heart', {
+      const response: Response = await fetch('http://localhost:3000/api/check_heart', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -16,7 +16,7 @@ export default function TestPage() {
           text: "Patient is experiencing severe chest pain radiating to left arm, shortness of breath, and cold sweats for the last 30 minutes."
         })
       });
-      const data = await response.json();
+      const data: { isHeartAttack: boolean } = await response.json();
       if (data.isHeartAttack === true) {
         router.push('http://localhost:3000/emergency_number');
       }

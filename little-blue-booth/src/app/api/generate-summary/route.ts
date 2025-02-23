@@ -48,11 +48,9 @@ Format the summary with clear sections and bullet points where appropriate.`,
     });
 
     const summary = response.choices[0]?.message?.content;
-
     if (!summary) {
       throw new Error("Failed to generate summary");
     }
-
     return NextResponse.json({ summary });
   } catch (error) {
     console.error("Error generating summary:", error);
