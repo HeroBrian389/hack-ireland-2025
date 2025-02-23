@@ -2,6 +2,7 @@ import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { TRPCError } from "@trpc/server";
 import { randomUUID } from "crypto";
+import { getFitData } from "~/services/googleFitService";
 
 const createSessionSchema = z.object({
   kioskId: z.string().uuid(),
@@ -87,13 +88,13 @@ export const kioskRouter = createTRPCRouter({
           },
         });
 
-        // Create conversation and audit log concurrently
+        // Create conversation, audit log, and fetch Google Fit data concurrently
         await Promise.all([
           ctx.db.conversation.create({ data: { sessionId: session.id } }),
           ctx.db.auditLog.create({
             data: {
               eventType: "info",
-              description: activeSession 
+              description: activeSession
                 ? "New session created (previous session ended)"
                 : "New session created",
               sessionId: session.id,
@@ -102,6 +103,117 @@ export const kioskRouter = createTRPCRouter({
               associatedType: "kiosk",
             },
           }),
+          // Fetch and store Google Fit data
+          (async () => {
+            try {
+              console.log(`[GoogleFit] Fetching data for user ${userId}`);
+              const fitData = await getFitData(userId);
+              console.log(
+                "[GoogleFit] Received data:",
+                JSON.stringify(fitData, null, 2),
+              );
+              if (!fitData) {
+                console.log("[GoogleFit] No data returned");
+                return;
+              }
+
+              // Create health markers for each metric
+              const healthMarkerPromises = [];
+              console.log("[GoogleFit] Creating health markers...");
+
+              if (fitData.bmi !== null) {
+                console.log("[GoogleFit] Adding BMI marker:", fitData.bmi);
+                healthMarkerPromises.push(
+                  ctx.db.healthMarker.create({
+                    data: {
+                      sessionId: session.id,
+                      markerType: "bmi",
+                      data: JSON.stringify({ value: fitData.bmi }),
+                    },
+                  }),
+                );
+              }
+
+              if (fitData.height !== null) {
+                healthMarkerPromises.push(
+                  ctx.db.healthMarker.create({
+                    data: {
+                      sessionId: session.id,
+                      markerType: "height",
+                      data: JSON.stringify({ value: fitData.height }),
+                    },
+                  }),
+                );
+              }
+
+              if (fitData.weight !== null) {
+                healthMarkerPromises.push(
+                  ctx.db.healthMarker.create({
+                    data: {
+                      sessionId: session.id,
+                      markerType: "weight",
+                      data: JSON.stringify({ value: fitData.weight }),
+                    },
+                  }),
+                );
+              }
+
+              if (fitData.heartRate !== null) {
+                healthMarkerPromises.push(
+                  ctx.db.healthMarker.create({
+                    data: {
+                      sessionId: session.id,
+                      markerType: "heartRate",
+                      data: JSON.stringify({ value: fitData.heartRate }),
+                    },
+                  }),
+                );
+              }
+
+              if (fitData.bloodPressure !== null) {
+                healthMarkerPromises.push(
+                  ctx.db.healthMarker.create({
+                    data: {
+                      sessionId: session.id,
+                      markerType: "bloodPressure",
+                      data: JSON.stringify({
+                        systolic: fitData.bloodPressure.systolic,
+                        diastolic: fitData.bloodPressure.diastolic,
+                      }),
+                    },
+                  }),
+                );
+              }
+
+              if (fitData.bloodOxygen !== null) {
+                healthMarkerPromises.push(
+                  ctx.db.healthMarker.create({
+                    data: {
+                      sessionId: session.id,
+                      markerType: "bloodOxygen",
+                      data: JSON.stringify({ value: fitData.bloodOxygen }),
+                    },
+                  }),
+                );
+              }
+
+              // Create all health markers
+              await Promise.all(healthMarkerPromises);
+            } catch (error) {
+              // Log the error but don't fail session creation
+              console.error("Failed to fetch/store Google Fit data:", error);
+              await ctx.db.auditLog.create({
+                data: {
+                  eventType: "warning",
+                  description: "Failed to fetch Google Fit data",
+                  details:
+                    error instanceof Error ? error.message : "Unknown error",
+                  sessionId: session.id,
+                  userId,
+                },
+              });
+            }
+          })(),
         ]);
 
         return session;
